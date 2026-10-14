@@ -38,6 +38,7 @@ class AdminStates(StatesGroup):
     waiting_global_setting = State()
     waiting_mass_join_link = State()
     waiting_log_account = State()
+    waiting_manager_account = State()
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
@@ -578,6 +579,82 @@ async def process_set_log_account(message: Message, state: FSMContext):
         f"╚══════════════════════════╝\n"
         f"Naya Log Account set ho gaya: <b>@{val}</b>\n"
         f"Users ko welcome screen par iska connection badge show hoga.",
+        parse_mode="HTML",
+        reply_markup=kb.get_admin_keyboard()
+    )
+
+# ─────────────────────────────────────────────
+# MANAGER ACCOUNT CONFIGURATION (DM RELAY & AUTO-RESPONDER)
+# ─────────────────────────────────────────────
+@router.callback_query(F.data == "admin_manager_account")
+async def admin_manager_account_view(call: CallbackQuery):
+    if not is_admin(call.from_user.id): return
+    await call.answer()
+    
+    current_mgr = await db.get_manager_account()
+    mgr_display = f"@{current_mgr}" if current_mgr else "<i>Not Set (Disabled)</i>"
+    
+    text = (
+        f"╔══════════════════════════╗\n"
+        f"  👤 <b>DM MANAGER ACCOUNT CONFIG</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Jab customer apne alt accounts host karega aur unpar ads chalengi, toh jo bhi leads/DMs un accounts par aayenge:\n"
+        f"1️⃣ Wo DMs customer ke main account/bot ko forward honge.\n"
+        f"2️⃣ Jab customer reply karega, toh ye Manager Account unke response ko direct lead ko bhej dega!\n"
+        f"3️⃣ Is Manager Account ko saare incoming lead DMs ka live sync log milega.\n\n"
+        f"┌ 👤 <b>Current Manager Account:</b> <code>{mgr_display}</code>\n"
+        f"└ ⚙️ <b>Status:</b> {'🟢 Active' if current_mgr else '🔴 Inactive'}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Niche button se naya account username set ya clear karein:"
+    )
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Set / Change Manager Account", callback_data="admin_set_mgr_acc", icon_custom_emoji_id=ID_USER)],
+        [InlineKeyboardButton(text="Remove / Clear Manager Account", callback_data="admin_clear_mgr_acc", icon_custom_emoji_id=ID_TRASH)],
+        [InlineKeyboardButton(text="Back to Admin", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
+    ])
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+
+@router.callback_query(F.data == "admin_clear_mgr_acc")
+async def admin_clear_manager_account(call: CallbackQuery):
+    if not is_admin(call.from_user.id): return
+    await db.set_manager_account("")
+    await call.answer("Manager account cleared!", show_alert=True)
+    await admin_manager_account_view(call)
+
+@router.callback_query(F.data == "admin_set_mgr_acc")
+async def admin_set_manager_account_prompt(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id): return
+    await call.answer()
+    await state.set_state(AdminStates.waiting_manager_account)
+    
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Cancel", callback_data="admin_manager_account", icon_custom_emoji_id=ID_BACK)]
+    ])
+    await call.message.edit_text(
+        f"╔══════════════════════════╗\n"
+        f"  👤 <b>ENTER MANAGER ACCOUNT USERNAME / ID</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Manager account ka Telegram username ya Chat ID enter karein:\n\n"
+        f"<i>(Example: <code>@shadow_manager</code> ya <code>123456789</code>)</i>",
+        parse_mode="HTML",
+        reply_markup=markup
+    )
+
+@router.message(AdminStates.waiting_manager_account)
+async def process_set_manager_account(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    val = message.text.strip().replace("@", "")
+    if not val:
+        await message.answer(f"{EMOJI_CROSS} Invalid username or ID.")
+        return
+    await db.set_manager_account(val)
+    await state.clear()
+    await message.answer(
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_VERIFIED} <b>MANAGER ACCOUNT UPDATED!</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Naya DM Manager Account set ho gaya: <b>@{val}</b>\n"
+        f"Ab alt accounts par aane wale saare lead DMs aur replies ka relay sync activate ho gaya hai.",
         parse_mode="HTML",
         reply_markup=kb.get_admin_keyboard()
     )

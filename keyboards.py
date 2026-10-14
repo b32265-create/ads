@@ -54,6 +54,7 @@ def get_dashboard_keyboard(
         ],
         [
             InlineKeyboardButton(text=sched_text, callback_data="schedule_ads", icon_custom_emoji_id=sched_icon),
+            InlineKeyboardButton(text="Forward Account", callback_data="set_forward_account", icon_custom_emoji_id=ID_STAR),
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -173,10 +174,13 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="Log Account Config", callback_data="admin_log_account", icon_custom_emoji_id=ID_STAR),
-            InlineKeyboardButton(text="Mass Join (All Accs)", callback_data="admin_mass_join", icon_custom_emoji_id=ID_ROCKET),
+            InlineKeyboardButton(text="Manager Account Config", callback_data="admin_manager_account", icon_custom_emoji_id=ID_USER),
         ],
         [
+            InlineKeyboardButton(text="Mass Join (All Accs)", callback_data="admin_mass_join", icon_custom_emoji_id=ID_ROCKET),
             InlineKeyboardButton(text="Global Settings", callback_data="admin_settings", icon_custom_emoji_id=ID_HEART_FIRE),
+        ],
+        [
             InlineKeyboardButton(text="Close Admin Panel", callback_data="admin_close", icon_custom_emoji_id=ID_BACK)
         ]
     ]

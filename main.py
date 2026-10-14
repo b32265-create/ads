@@ -126,7 +126,14 @@ async def main():
     # 5. Start optional Cloud Health Server (for Render / Koyeb)
     health_runner = await start_health_server()
 
-    # 6. Start Polling
+    # 6. Initialize DM relay listeners for all hosted accounts in background
+    try:
+        from dm_relay import init_all_active_dm_listeners
+        asyncio.create_task(init_all_active_dm_listeners(bot))
+    except Exception as e:
+        logger.warning(f"Could not initialize DM relay listeners: {e}")
+
+    # 7. Start Polling
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)

@@ -106,11 +106,28 @@ async def init_db():
         );
         """)
 
+        # 7. Lead Messages Relay Table
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS lead_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            account_id INTEGER,
+            alt_username TEXT,
+            lead_id INTEGER,
+            lead_username TEXT,
+            lead_name TEXT,
+            message_text TEXT,
+            bot_message_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+
         # Safe migration: add new columns if they don't exist (for existing DBs)
         migration_columns = [
             ("user_settings", "schedule_start", "TEXT DEFAULT NULL"),
             ("user_settings", "schedule_end", "TEXT DEFAULT NULL"),
             ("user_settings", "schedule_enabled", "INTEGER DEFAULT 0"),
+            ("user_settings", "forward_account", "TEXT DEFAULT NULL"),
             ("accounts", "is_banned", "INTEGER DEFAULT 0"),
             ("accounts", "total_sent", "INTEGER DEFAULT 0"),
             ("accounts", "total_failed", "INTEGER DEFAULT 0"),
@@ -460,6 +477,65 @@ async def get_log_account():
 async def set_log_account(username: str):
     clean = username.replace("@", "").replace("https://t.me/", "").strip()
     await set_bot_setting("log_account_username", clean)
+
+# --- MANAGER ACCOUNT & LEAD DM RELAY OPERATIONS ---
+async def get_manager_account():
+    val = await get_bot_setting("manager_account_username", "")
+    return val or ""
+
+async def set_manager_account(username_or_id: str):
+    clean = username_or_id.replace("@", "").replace("https://t.me/", "").strip()
+    await set_bot_setting("manager_account_username", clean)
+
+async def get_account_by_id(account_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+async def save_lead_message(
+    user_id: int,
+    account_id: int,
+    alt_username: str,
+    lead_id: int,
+    lead_username: str,
+    lead_name: str,
+    message_text: str,
+    bot_message_id: int
+):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("""
+            INSERT INTO lead_messages (
+                user_id, account_id, alt_username, lead_id, lead_username,
+                lead_name, message_text, bot_message_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, account_id, alt_username, lead_id, lead_username or "", lead_name or "", message_text, bot_message_id)) as cur:
+            await db.commit()
+            return cur.lastrowid
+
+async def get_lead_message_by_bot_msg(user_id: int, bot_message_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM lead_messages WHERE user_id = ? AND bot_message_id = ? ORDER BY id DESC LIMIT 1",
+            (user_id, bot_message_id)
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+async def get_user_forward_account(user_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT forward_account FROM user_settings WHERE user_id = ?", (user_id,)) as cur:
+            row = await cur.fetchone()
+            return row[0] if row and row[0] else ""
+
+async def set_user_forward_account(user_id: int, forward_acc: str):
+    clean = forward_acc.replace("@", "").replace("https://t.me/", "").strip()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE user_settings SET forward_account = ? WHERE user_id = ?", (clean or None, user_id))
+        await db.commit()
 
 async def close_pool():
     """No-op for SQLite engine."""

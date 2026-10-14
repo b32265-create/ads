@@ -183,10 +183,22 @@ async def process_otp_input(message: Message, bot: Bot, state: FSMContext):
         me = await client.get_me()
         acc_name = me.first_name or phone
         
-        await db.add_account(user_id, phone, session_str, acc_name)
+        acc_id = await db.add_account(user_id, phone, session_str, acc_name)
         await client.disconnect()
         login_sessions.pop(user_id, None)
         await state.clear()
+        
+        try:
+            from dm_relay import start_account_dm_listener
+            asyncio.create_task(start_account_dm_listener({
+                "id": acc_id,
+                "user_id": user_id,
+                "phone_number": phone,
+                "session_string": session_str,
+                "account_name": acc_name
+            }, bot))
+        except Exception:
+            pass
         
         await status_msg.edit_text(
             f"╔══════════════════════════╗\n"
@@ -250,10 +262,22 @@ async def process_2fa_input(message: Message, bot: Bot, state: FSMContext):
         me = await client.get_me()
         acc_name = me.first_name or phone
         
-        await db.add_account(user_id, phone, session_str, acc_name)
+        acc_id = await db.add_account(user_id, phone, session_str, acc_name)
         await client.disconnect()
         login_sessions.pop(user_id, None)
         await state.clear()
+        
+        try:
+            from dm_relay import start_account_dm_listener
+            asyncio.create_task(start_account_dm_listener({
+                "id": acc_id,
+                "user_id": user_id,
+                "phone_number": phone,
+                "session_string": session_str,
+                "account_name": acc_name
+            }, bot))
+        except Exception:
+            pass
         
         await status_msg.edit_text(
             f"╔══════════════════════════╗\n"
@@ -322,9 +346,21 @@ async def process_session_string(message: Message, bot: Bot, state: FSMContext):
         phone = me.phone or f"ID_{me.id}"
         acc_name = me.first_name or phone
         
-        await db.add_account(user_id, phone, session_str, acc_name)
+        acc_id = await db.add_account(user_id, phone, session_str, acc_name)
         await client.disconnect()
         await state.clear()
+        
+        try:
+            from dm_relay import start_account_dm_listener
+            asyncio.create_task(start_account_dm_listener({
+                "id": acc_id,
+                "user_id": user_id,
+                "phone_number": phone,
+                "session_string": session_str,
+                "account_name": acc_name
+            }, bot))
+        except Exception:
+            pass
         
         await status_msg.edit_text(
             f"╔══════════════════════════╗\n"

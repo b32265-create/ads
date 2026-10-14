@@ -8,9 +8,10 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
+import time
 import database as db
 import keyboards as kb
-from banner_generator import generate_user_welcome_banner
+from banner_generator import generate_user_welcome_banner, CACHE_DIR
 from middlewares.force_join import check_user_force_join
 from emojis import (
     ID_HEART_FIRE, ID_DIAMOND, ID_BACK, ID_USER, ID_STAR, ID_TRASH, ID_WARNING,
@@ -38,6 +39,12 @@ class UserStates(StatesGroup):
     waiting_autojoin_links = State()
     waiting_schedule_start = State()
     waiting_schedule_end = State()
+    waiting_forward_account = State()
+
+# In-memory ultra-fast cache for welcome banners & log account
+_USER_BANNER_FILE_ID: dict = {}
+_CACHED_LOG_ACCOUNT: str = ""
+_CACHED_LOG_ACCOUNT_TIME: float = 0.0
 
 def format_interval(seconds: int) -> str:
     if not seconds or seconds <= 0:
@@ -191,11 +198,20 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
     # Register user in DB
     await db.get_or_create_user(user_id, username, first_name)
 
-    # Parallel check for ban status, force join, and log account
-    user_info, (is_joined, unjoined), log_account = await asyncio.gather(
+    # 1. Parallel check for user info, force join, and log account
+    global _CACHED_LOG_ACCOUNT, _CACHED_LOG_ACCOUNT_TIME
+    now = time.time()
+    if now - _CACHED_LOG_ACCOUNT_TIME > 60.0:
+        try:
+            _CACHED_LOG_ACCOUNT = await db.get_log_account()
+            _CACHED_LOG_ACCOUNT_TIME = now
+        except Exception:
+            pass
+    log_account = _CACHED_LOG_ACCOUNT
+
+    user_info, (is_joined, unjoined) = await asyncio.gather(
         db.get_user_info(user_id),
-        check_user_force_join(bot, user_id),
-        db.get_log_account()
+        check_user_force_join(bot, user_id)
     )
 
     if user_info and user_info.get('is_banned', 0):
@@ -220,27 +236,6 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
             reply_markup=kb.get_force_join_keyboard(unjoined)
         )
         return
-
-    # Download user avatar for custom banner compositing
-    avatar_bytes = None
-    try:
-        photos = await bot.get_user_profile_photos(user_id, limit=1)
-        if photos.total_count > 0:
-            file_id = photos.photos[0][-1].file_id
-            tg_file = await bot.get_file(file_id)
-            avatar_bio = io.BytesIO()
-            await bot.download_file(tg_file.file_path, avatar_bio)
-            avatar_bytes = avatar_bio.getvalue()
-    except Exception:
-        pass
-
-    # Generate personalized dynamic banner
-    banner_path = generate_user_welcome_banner(
-        user_id=user_id,
-        username=username or "",
-        first_name=first_name or "",
-        avatar_bytes=avatar_bytes
-    )
 
     log_section = ""
     if log_account:
@@ -276,14 +271,67 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
 
     markup = InlineKeyboardMarkup(inline_keyboard=start_keyboard)
 
-    if banner_path and os.path.exists(banner_path):
+    # ⚡ LIGHTNING-FAST BANNER SEND: Check in-memory Telegram file_id first (<50ms!)
+    cached_file_id = _USER_BANNER_FILE_ID.get(user_id)
+    if cached_file_id:
         try:
             await message.answer_photo(
+                photo=cached_file_id,
+                caption=welcome_text,
+                parse_mode="HTML",
+                reply_markup=markup
+            )
+            return
+        except Exception:
+            _USER_BANNER_FILE_ID.pop(user_id, None)
+
+    # Check disk cache: if banner was already generated, upload directly without re-rendering
+    expected_banner = os.path.join(CACHE_DIR, f"banner_{user_id}.png")
+    if os.path.exists(expected_banner):
+        try:
+            sent_msg = await message.answer_photo(
+                photo=FSInputFile(expected_banner),
+                caption=welcome_text,
+                parse_mode="HTML",
+                reply_markup=markup
+            )
+            if sent_msg.photo:
+                _USER_BANNER_FILE_ID[user_id] = sent_msg.photo[-1].file_id
+            return
+        except Exception as e:
+            logger.error(f"Error sending cached banner: {e}")
+
+    # First time user: download avatar and generate in background thread
+    avatar_bytes = None
+    try:
+        photos = await bot.get_user_profile_photos(user_id, limit=1)
+        if photos.total_count > 0:
+            file_id = photos.photos[0][-1].file_id
+            tg_file = await bot.get_file(file_id)
+            avatar_bio = io.BytesIO()
+            await bot.download_file(tg_file.file_path, avatar_bio)
+            avatar_bytes = avatar_bio.getvalue()
+    except Exception:
+        pass
+
+    banner_path = await asyncio.to_thread(
+        generate_user_welcome_banner,
+        user_id=user_id,
+        username=username or "",
+        first_name=first_name or "",
+        avatar_bytes=avatar_bytes
+    )
+
+    if banner_path and os.path.exists(banner_path):
+        try:
+            sent_msg = await message.answer_photo(
                 photo=FSInputFile(banner_path),
                 caption=welcome_text,
                 parse_mode="HTML",
                 reply_markup=markup
             )
+            if sent_msg.photo:
+                _USER_BANNER_FILE_ID[user_id] = sent_msg.photo[-1].file_id
             return
         except Exception as e:
             logger.error(f"Error sending welcome banner: {e}")
@@ -888,3 +936,114 @@ async def btn_refer_earn(call: CallbackQuery, bot: Bot):
         await call.message.answer(text, parse_mode="HTML", reply_markup=markup)
     else:
         await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+
+
+# ─────────────────────────────────────────────
+# CUSTOMER FORWARD ACCOUNT CONFIGURATION
+# ─────────────────────────────────────────────
+@router.callback_query(F.data == "set_forward_account")
+async def btn_set_forward_account(call: CallbackQuery):
+    await call.answer()
+    user_id = call.from_user.id
+    current_fwd = await db.get_user_forward_account(user_id)
+    fwd_display = f"@{current_fwd}" if current_fwd else "<i>Not Set (Bot Chat Only)</i>"
+
+    text = (
+        f"╔══════════════════════════╗\n"
+        f"  📲 <b>LEAD DM FORWARDING ACCOUNT</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Jab aapke alt accounts par ads chalengi aur koi lead DM karegi:\n"
+        f"• Bot aapko automatically yahan notification aur reply link dega.\n"
+        f"• Agar aap chahte hain ki DMs direct aapke personal Telegram account par forward hon, toh niche apna Main Account username enter karein.\n\n"
+        f"┌ 📲 <b>Current Forward Account:</b> <code>{fwd_display}</code>\n"
+        f"└ ⚙️ <b>Status:</b> {'🟢 Active' if current_fwd else '⚪ Inactive (Bot Only)'}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Niche button se naya account username set ya clear karein:"
+    )
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Set / Change Main Account", callback_data="user_set_fwd_acc", icon_custom_emoji_id=ID_USER)],
+        [InlineKeyboardButton(text="Remove / Clear Main Account", callback_data="user_clear_fwd_acc", icon_custom_emoji_id=ID_TRASH)],
+        [InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)]
+    ])
+
+    if call.message.photo:
+        await call.message.delete()
+        await call.message.answer(text, parse_mode="HTML", reply_markup=markup)
+    else:
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+
+@router.callback_query(F.data == "user_clear_fwd_acc")
+async def user_clear_forward_account(call: CallbackQuery):
+    await db.set_user_forward_account(call.from_user.id, "")
+    await call.answer("Forward account removed! DMs will be delivered in bot.", show_alert=True)
+    await btn_set_forward_account(call)
+
+@router.callback_query(F.data == "user_set_fwd_acc")
+async def user_set_forward_account_prompt(call: CallbackQuery, state: FSMContext):
+    await call.answer()
+    await state.set_state(UserStates.waiting_forward_account)
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Cancel", callback_data="set_forward_account", icon_custom_emoji_id=ID_BACK)]
+    ])
+    text = (
+        f"╔══════════════════════════╗\n"
+        f"  📲 <b>ENTER YOUR MAIN TELEGRAM HANDLE</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Apne main personal account ka username enter karein:\n\n"
+        f"<i>(Example: <code>@my_main_account</code> ya numeric Chat ID)</i>"
+    )
+    if call.message.photo:
+        await call.message.delete()
+        await call.message.answer(text, parse_mode="HTML", reply_markup=markup)
+    else:
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+
+@router.message(UserStates.waiting_forward_account)
+async def process_set_forward_account(message: Message, state: FSMContext):
+    clean = message.text.strip().replace("@", "")
+    if not clean:
+        await message.answer(f"{EMOJI_CROSS} Invalid username.")
+        return
+    await db.set_user_forward_account(message.from_user.id, clean)
+    await state.clear()
+    await message.answer(
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_VERIFIED} <b>MAIN ACCOUNT SAVED!</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Ab aapke alt accounts par aane wale lead DMs <b>@{clean}</b> ko bhi forward honge!",
+        parse_mode="HTML",
+        reply_markup=kb.get_back_keyboard()
+    )
+
+
+# ─────────────────────────────────────────────
+# TWO-WAY LEAD REPLY HANDLER (REPLY VIA ALT ACCOUNT)
+# ─────────────────────────────────────────────
+@router.message(F.reply_to_message)
+async def handle_customer_lead_reply(message: Message, bot: Bot):
+    if not message.reply_to_message:
+        return
+
+    reply_msg_id = message.reply_to_message.message_id
+    user_id = message.from_user.id
+    reply_text = message.text or message.caption or ""
+
+    from dm_relay import send_reply_from_alt
+    success, reply_info = await send_reply_from_alt(
+        user_id=user_id,
+        bot_message_id=reply_msg_id,
+        reply_text=reply_text,
+        bot=bot
+    )
+
+    if success:
+        await message.reply(
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_VERIFIED} <b>REPLY DELIVERED TO LEAD!</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"{reply_info}\n\n"
+            f"💬 <b>Your Reply:</b>\n"
+            f"<blockquote>{reply_text}</blockquote>",
+            parse_mode="HTML"
+        )
+

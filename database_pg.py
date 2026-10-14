@@ -143,12 +143,33 @@ async def init_db():
         );
         """)
 
+        # 7. LEAD MESSAGES RELAY TABLE (Incoming DMs & Replies)
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS lead_messages (
+            id             BIGSERIAL PRIMARY KEY,
+            user_id        BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
+            account_id     BIGINT,
+            alt_username   TEXT,
+            lead_id        BIGINT,
+            lead_username  TEXT,
+            lead_name      TEXT,
+            message_text   TEXT,
+            bot_message_id BIGINT,
+            created_at     TIMESTAMPTZ DEFAULT NOW()
+        );
+        """)
+
+        # Migrations for user_settings
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS forward_account TEXT DEFAULT NULL;")
+
         # ── INDEXES for performance ──────────────────────
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_accounts_user_id   ON accounts(user_id);")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_accounts_status     ON accounts(user_id, status, is_banned);")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_users_banned        ON users(is_banned);")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_user_settings_status ON user_settings(status);")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_force_join_active   ON force_join_channels(is_active);")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_lead_msg_lookup     ON lead_messages(user_id, bot_message_id);")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_lead_msg_account    ON lead_messages(account_id, lead_id);")
 
     logger.info("✅ PostgreSQL database initialized with all tables and indexes!")
 
@@ -632,4 +653,72 @@ async def get_log_account() -> str:
 async def set_log_account(username: str):
     clean = username.replace("@", "").replace("https://t.me/", "").strip()
     await set_bot_setting("log_account_username", clean)
+
+# ─────────────────────────────────────────────────────────
+# MANAGER ACCOUNT & LEAD DM RELAY OPERATIONS
+# ─────────────────────────────────────────────────────────
+async def get_manager_account() -> str:
+    val = await get_bot_setting("manager_account_username", "")
+    return val or ""
+
+async def set_manager_account(username_or_id: str):
+    clean = username_or_id.replace("@", "").replace("https://t.me/", "").strip()
+    await set_bot_setting("manager_account_username", clean)
+
+async def get_account_by_id(account_id: int) -> Optional[Dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM accounts WHERE id = $1", account_id)
+        return dict(row) if row else None
+
+async def save_lead_message(
+    user_id: int,
+    account_id: int,
+    alt_username: str,
+    lead_id: int,
+    lead_username: str,
+    lead_name: str,
+    message_text: str,
+    bot_message_id: int
+) -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        val = await conn.fetchval("""
+            INSERT INTO lead_messages (
+                user_id, account_id, alt_username, lead_id, lead_username,
+                lead_name, message_text, bot_message_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id
+        """, user_id, account_id, alt_username, lead_id, lead_username or "", lead_name or "", message_text, bot_message_id)
+        return val
+
+async def get_lead_message_by_bot_msg(user_id: int, bot_message_id: int) -> Optional[Dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM lead_messages WHERE user_id = $1 AND bot_message_id = $2 ORDER BY id DESC LIMIT 1",
+            user_id, bot_message_id
+        )
+        return dict(row) if row else None
+
+async def get_user_forward_account(user_id: int) -> str:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        val = await conn.fetchval(
+            "SELECT forward_account FROM user_settings WHERE user_id = $1",
+            user_id
+        )
+        return val or ""
+
+async def set_user_forward_account(user_id: int, forward_acc: str):
+    clean = forward_acc.replace("@", "").replace("https://t.me/", "").strip()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE user_settings SET forward_account = $1 WHERE user_id = $2",
+            clean or None, user_id
+        )
+    _cache_settings.pop(user_id, None)
+
 
