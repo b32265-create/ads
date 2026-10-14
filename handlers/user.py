@@ -254,7 +254,7 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
     welcome_text = (
         f"This bot helps you to turn your <b>Alt Account</b> into an automated <b>AdsBot</b> so you can run your Auto Advertisements across Telegram.\n\n"
         f"Only AdsBot with free trial on telegram.\n"
-        f"Which provide almost all premium features in free kisi bhi tarike ka bot self promotion banner nhi lagega, naam ke piche 'via @xyz bot' lagega nah hi bio me koi link aayega.\n"
+        f"Which provide almost all premium features in free kisi bhi tarike ka bot self promotion banner nhi lagega, nah hi naam ke piche via @xyz lagega nah hi bio me koi link aayega.\n"
         f"Work as normal account with bulk power.\n\n"
         f"Start the bot to begin your impactful advertisement journey with Tecxo.\n"
         f"{log_section}"
