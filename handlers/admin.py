@@ -37,6 +37,7 @@ class AdminStates(StatesGroup):
     waiting_user_search = State()
     waiting_global_setting = State()
     waiting_mass_join_link = State()
+    waiting_log_account = State()
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
@@ -506,6 +507,80 @@ async def process_global_setting(message: Message, state: FSMContext):
     await db.set_bot_setting(key, value)
     await state.clear()
     await message.answer(f"{EMOJI_VERIFIED} <b>Global parameter updated!</b>\n<code>{key}</code> = <code>{value}</code>", parse_mode="HTML")
+
+# ─────────────────────────────────────────────
+# LOG ACCOUNT MANAGEMENT
+# ─────────────────────────────────────────────
+@router.callback_query(F.data == "admin_log_account")
+async def admin_log_account_view(call: CallbackQuery):
+    if not is_admin(call.from_user.id): return
+    await call.answer()
+    
+    current_log = await db.get_log_account()
+    log_display = f"@{current_log}" if current_log else "<i>Not Set (Disabled)</i>"
+    
+    text = (
+        f"╔══════════════════════════╗\n"
+        f"  📡 <b>LIVE LOG ACCOUNT CONFIG</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Aap ek official Telegram Log Account ya Channel set kar sakte hain.\n"
+        f"Jab user bot start karega, toh usse is Log Account ka direct link milega, jahan se wo apne automated ads ke live delivery logs dekh sakega.\n\n"
+        f"┌ 📡 <b>Current Log Account:</b> <code>{log_display}</code>\n"
+        f"└ ⚙️ <b>Status:</b> {'🟢 Active' if current_log else '🔴 Inactive'}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Niche button se naya account username set ya clear karein:"
+    )
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Set / Change Log Account", callback_data="admin_set_log_acc", icon_custom_emoji_id=ID_STAR)],
+        [InlineKeyboardButton(text="Remove / Clear Log Account", callback_data="admin_clear_log_acc", icon_custom_emoji_id=ID_TRASH)],
+        [InlineKeyboardButton(text="Back to Admin", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
+    ])
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+
+@router.callback_query(F.data == "admin_clear_log_acc")
+async def admin_clear_log_account(call: CallbackQuery):
+    if not is_admin(call.from_user.id): return
+    await db.set_log_account("")
+    await call.answer("Log account cleared!", show_alert=True)
+    await admin_log_account_view(call)
+
+@router.callback_query(F.data == "admin_set_log_acc")
+async def admin_set_log_account_prompt(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id): return
+    await call.answer()
+    await state.set_state(AdminStates.waiting_log_account)
+    
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Cancel", callback_data="admin_log_account", icon_custom_emoji_id=ID_BACK)]
+    ])
+    await call.message.edit_text(
+        f"╔══════════════════════════╗\n"
+        f"  📡 <b>ENTER LOG ACCOUNT USERNAME</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Log account ya bot ka Telegram username enter karein:\n\n"
+        f"<i>(Example: <code>@shadow_logs_bot</code> ya <code>shadow_logs</code>)</i>",
+        parse_mode="HTML",
+        reply_markup=markup
+    )
+
+@router.message(AdminStates.waiting_log_account)
+async def process_set_log_account(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    val = message.text.strip().replace("@", "")
+    if not val:
+        await message.answer(f"{EMOJI_CROSS} Invalid username.")
+        return
+    await db.set_log_account(val)
+    await state.clear()
+    await message.answer(
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_VERIFIED} <b>LOG ACCOUNT UPDATED!</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Naya Log Account set ho gaya: <b>@{val}</b>\n"
+        f"Users ko welcome screen par iska connection badge show hoga.",
+        parse_mode="HTML",
+        reply_markup=kb.get_admin_keyboard()
+    )
 
 # ─────────────────────────────────────────────
 # MASS JOIN TO ALL ACCOUNTS (10-SECOND TIMER GAP)

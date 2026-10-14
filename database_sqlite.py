@@ -20,9 +20,21 @@ async def init_db():
             first_name TEXT,
             joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             is_banned INTEGER DEFAULT 0,
-            is_premium INTEGER DEFAULT 0
+            is_premium INTEGER DEFAULT 0,
+            referred_by INTEGER DEFAULT NULL,
+            referral_count INTEGER DEFAULT 0,
+            premium_expires_at TEXT DEFAULT NULL
         );
         """)
+        for col_def in [
+            "referred_by INTEGER DEFAULT NULL",
+            "referral_count INTEGER DEFAULT 0",
+            "premium_expires_at TEXT DEFAULT NULL"
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE users ADD COLUMN {col_def};")
+            except Exception:
+                pass
 
         # 2. User Ad Settings table (with schedule + media support)
         await db.execute("""
@@ -393,6 +405,61 @@ async def get_all_bot_settings():
         async with db.execute("SELECT key, value FROM bot_settings") as cursor:
             rows = await cursor.fetchall()
             return {r['key']: r['value'] for r in rows}
+
+# --- REFERRAL & REWARD OPERATIONS ---
+async def record_user_referral(new_user_id: int, referrer_id: int):
+    if new_user_id == referrer_id:
+        return False, 0, False
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT user_id FROM users WHERE user_id = ?", (referrer_id,)) as cur:
+            if not await cur.fetchone():
+                return False, 0, False
+
+        async with db.execute("SELECT referred_by FROM users WHERE user_id = ?", (new_user_id,)) as cur:
+            row = await cur.fetchone()
+            if row and row[0] is not None:
+                return False, 0, False
+
+        await db.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, new_user_id))
+        await db.execute("UPDATE users SET referral_count = COALESCE(referral_count, 0) + 1 WHERE user_id = ?", (referrer_id,))
+        await db.commit()
+
+        async with db.execute("SELECT referral_count, is_premium FROM users WHERE user_id = ?", (referrer_id,)) as cur:
+            row = await cur.fetchone()
+            new_count = row[0] if row else 0
+            is_prem = row[1] if row else 0
+
+        unlocked = False
+        if new_count >= 5 and is_prem == 0:
+            await db.execute("UPDATE users SET is_premium = 1 WHERE user_id = ?", (referrer_id,))
+            await db.commit()
+            unlocked = True
+
+        return True, new_count, unlocked
+
+async def get_user_referral_stats(user_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT referral_count, referred_by, is_premium, premium_expires_at FROM users WHERE user_id = ?", (user_id,)) as cur:
+            row = await cur.fetchone()
+            if row:
+                return dict(row)
+            return {"referral_count": 0, "referred_by": None, "is_premium": 0, "premium_expires_at": None}
+
+async def set_user_premium_status(user_id: int, is_premium: int = 1, days=None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE users SET is_premium = ? WHERE user_id = ?", (is_premium, user_id))
+        await db.commit()
+
+# --- LOG ACCOUNT OPERATIONS ---
+async def get_log_account():
+    val = await get_bot_setting("log_account_username", "")
+    return val or ""
+
+async def set_log_account(username: str):
+    clean = username.replace("@", "").replace("https://t.me/", "").strip()
+    await set_bot_setting("log_account_username", clean)
 
 async def close_pool():
     """No-op for SQLite engine."""

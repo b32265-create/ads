@@ -53,21 +53,31 @@ def is_within_schedule(start_str: str, end_str: str) -> bool:
 async def send_ad_to_dialog(client: TelegramClient, dialog_id: int, settings: dict) -> bool:
     """
     Send ad (text or media) to a single dialog.
-    Returns True on success, False on failure.
+    Supports native HTML formatting, custom premium emojis (<tg-emoji>), and standard text.
     """
     ad_message = settings.get("ad_message") or ""
     ad_media_id = settings.get("ad_media_id")
     ad_media_type = settings.get("ad_media_type")
 
     if ad_media_id and ad_media_type:
-        # Media ad: send file with caption
-        await client.send_file(
-            dialog_id,
-            file=int(ad_media_id),
-            caption=ad_message or None
-        )
+        try:
+            await client.send_file(
+                dialog_id,
+                file=ad_media_id,
+                caption=ad_message or None,
+                parse_mode='html'
+            )
+        except Exception:
+            await client.send_file(
+                dialog_id,
+                file=ad_media_id,
+                caption=ad_message or None
+            )
     else:
-        await client.send_message(dialog_id, ad_message)
+        try:
+            await client.send_message(dialog_id, ad_message, parse_mode='html')
+        except Exception:
+            await client.send_message(dialog_id, ad_message)
     return True
 
 

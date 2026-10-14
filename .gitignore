@@ -9,3 +9,5 @@ __pycache__/
 *.db-shm
 .env
 .DS_Store
+assets/user_banners/
+assets/test_banner.png

@@ -1,13 +1,16 @@
+import os
+import io
 import logging
 import asyncio
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery, PhotoSize, Video, Document
+from aiogram.types import Message, CallbackQuery, PhotoSize, Video, Document, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 import database as db
 import keyboards as kb
+from banner_generator import generate_user_welcome_banner
 from middlewares.force_join import check_user_force_join
 from emojis import (
     ID_HEART_FIRE, ID_DIAMOND, ID_BACK, ID_USER, ID_STAR, ID_TRASH, ID_WARNING,
@@ -153,13 +156,46 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
     username = message.from_user.username
     first_name = message.from_user.first_name
 
-    # Background registration so user doesn't wait for DB roundtrips
-    asyncio.create_task(db.get_or_create_user(user_id, username, first_name))
+    # Check for referral payload: e.g. /start ref_12345678 or /start 12345678
+    args = message.text.split()[1] if len(message.text.split()) > 1 else ""
+    if args:
+        ref_raw = args.replace("ref_", "").strip()
+        if ref_raw.isdigit():
+            referrer_id = int(ref_raw)
+            try:
+                is_counted, new_count, unlocked_reward = await db.record_user_referral(user_id, referrer_id)
+                if is_counted:
+                    reward_msg = (
+                        f"\n\n👑 <b>CONGRATULATIONS!</b> Aapke 5 referrals pure ho gaye!\n"
+                        f"<b>1-Month VIP Premium Access</b> automatically aapke account par FREE activate ho gaya hai! 🚀"
+                        if unlocked_reward else
+                        f"\n💡 <i>Sirf {max(0, 5 - new_count)} aur referral chahiye 1-Month Free VIP ke liye!</i>"
+                    )
+                    try:
+                        await bot.send_message(
+                            referrer_id,
+                            f"╔══════════════════════════╗\n"
+                            f"  🎉 <b>NEW REFERRAL JOINED!</b>\n"
+                            f"╚══════════════════════════╝\n"
+                            f"Aapke referral link se naya user jud gaya hai:\n"
+                            f"• 👤 <b>User:</b> <code>{message.from_user.full_name}</code>\n"
+                            f"• 👥 <b>Total Referrals:</b> <code>{new_count}/5</code>"
+                            + reward_msg,
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.warning(f"Error handling referral: {e}")
 
-    # Fast parallel check for ban status and force join
-    user_info, (is_joined, unjoined) = await asyncio.gather(
+    # Register user in DB
+    await db.get_or_create_user(user_id, username, first_name)
+
+    # Parallel check for ban status, force join, and log account
+    user_info, (is_joined, unjoined), log_account = await asyncio.gather(
         db.get_user_info(user_id),
-        check_user_force_join(bot, user_id)
+        check_user_force_join(bot, user_id),
+        db.get_log_account()
     )
 
     if user_info and user_info.get('is_banned', 0):
@@ -185,7 +221,74 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
         )
         return
 
-    await show_dashboard(bot, message.chat.id, user_id)
+    # Download user avatar for custom banner compositing
+    avatar_bytes = None
+    try:
+        photos = await bot.get_user_profile_photos(user_id, limit=1)
+        if photos.total_count > 0:
+            file_id = photos.photos[0][-1].file_id
+            tg_file = await bot.get_file(file_id)
+            avatar_bio = io.BytesIO()
+            await bot.download_file(tg_file.file_path, avatar_bio)
+            avatar_bytes = avatar_bio.getvalue()
+    except Exception:
+        pass
+
+    # Generate personalized dynamic banner
+    banner_path = generate_user_welcome_banner(
+        user_id=user_id,
+        username=username or "",
+        first_name=first_name or "",
+        avatar_bytes=avatar_bytes
+    )
+
+    log_section = ""
+    if log_account:
+        log_section = (
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📡 <b>LIVE AD DELIVERY LOGS ACCOUNT:</b>\n"
+            f"👉 <a href='https://t.me/{log_account}'>@{log_account}</a>\n"
+            f"<i>(Is account par message karein taki campaign ke live delivery logs aapko aane lagein)</i>\n"
+        )
+
+    welcome_text = (
+        f"This bot helps you to turn your <b>Alt Account</b> into an automated <b>AdsBot</b> so you can run your Auto Advertisements across Telegram.\n\n"
+        f"Only AdsBot with free trial on telegram.\n"
+        f"Which provide almost all premium features in free kisi bhi tarike ka bot self promotion banner nhi lagega, naam ke piche 'via @xyz bot' lagega nah hi bio me koi link aayega.\n"
+        f"Work as normal account with bulk power.\n\n"
+        f"Start the bot to begin your impactful advertisement journey with Tecxo.\n"
+        f"{log_section}"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Powered by: <a href='https://t.me/SHADOW_SELLER07'>@SHADOW_SELLER07</a>"
+    )
+
+    start_keyboard = [
+        [InlineKeyboardButton(text="Open Control Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_FIRE)],
+        [InlineKeyboardButton(text="Refer & Earn (Free VIP)", callback_data="refer_earn", icon_custom_emoji_id=ID_GIFT)],
+    ]
+    if log_account:
+        start_keyboard.append([
+            InlineKeyboardButton(text=f"Live Logs: @{log_account}", url=f"https://t.me/{log_account}", icon_custom_emoji_id=ID_STAR)
+        ])
+    start_keyboard.append([
+        InlineKeyboardButton(text="Lifetime VIP Pass (₹100)", callback_data="premium", icon_custom_emoji_id=ID_DIAMOND)
+    ])
+
+    markup = InlineKeyboardMarkup(inline_keyboard=start_keyboard)
+
+    if banner_path and os.path.exists(banner_path):
+        try:
+            await message.answer_photo(
+                photo=FSInputFile(banner_path),
+                caption=welcome_text,
+                parse_mode="HTML",
+                reply_markup=markup
+            )
+            return
+        except Exception as e:
+            logger.error(f"Error sending welcome banner: {e}")
+
+    await message.answer(welcome_text, parse_mode="HTML", reply_markup=markup)
 
 # --- VERIFY FORCE JOIN ---
 @router.callback_query(F.data == "verify_force_join")
@@ -244,8 +347,8 @@ async def btn_set_ad_msg(call: CallbackQuery, state: FSMContext):
 async def process_ad_message(message: Message, bot: Bot, state: FSMContext):
     user_id = message.from_user.id
 
-    # Detect media type
-    ad_text = message.text or message.caption or ""
+    # Detect media type and preserve HTML / custom premium emojis
+    ad_text = message.html_text if (message.text or message.caption) else ""
     media_id = None
     media_type = None
 
@@ -715,15 +818,73 @@ async def btn_premium(call: CallbackQuery):
         f"🚀 <b>Ultra-Fast 2s Message Delay</b>\n"
         f"   └ <i>Turbocharged broadcast speed across target chats</i>\n\n"
         f"🌐 <b>Auto-Joiner & Group Targeting</b>\n"
-        f"   └ <i>Accounts se automatically public groups join karein</i>\n\n"
+        f"   └ <i>Accounts se automatically public & private groups join karein</i>\n\n"
         f"👑 <b>Priority 24/7 Cloud Engine</b>\n"
         f"   └ <i>Dedicated high-speed background worker pipeline</i>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{EMOJI_MONEY} <b>PRICING TIERS:</b>\n"
-        f"• <b>1 Month Pass:</b> <code>₹199 / $2.50</code>\n"
-        f"• <b>Lifetime Access:</b> <code>₹499 / $6.00</code>\n"
+        f"{EMOJI_MONEY} <b>VIP PRICING & REWARDS:</b>\n"
+        f"• 🎁 <b>1 Month VIP Access:</b> <code>5 Referrals</code> <i>(100% FREE!)</i>\n"
+        f"• 💎 <b>Lifetime VIP Access:</b> <code>₹100 / $1.20</code>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👑 <b>Powered by:</b> <a href='https://t.me/SHADOW_SELLER07'>@SHADOW_SELLER07</a>\n\n"
         f"💬 <b>Instant VIP Activation Ke Liye Contact Karein:</b>\n"
-        f"👉 <b>Admin:</b> @ALL_SHADOWS_BOT"
+        f"👉 <a href='https://t.me/SHADOW_SELLER07'>@SHADOW_SELLER07</a>"
     )
-    await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Contact @SHADOW_SELLER07", url="https://t.me/SHADOW_SELLER07")],
+        [InlineKeyboardButton(text="Refer 5 Friends (Free VIP)", callback_data="refer_earn", icon_custom_emoji_id=ID_GIFT)],
+        [InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)]
+    ])
+    if call.message.photo:
+        await call.message.delete()
+        await call.message.answer(text, parse_mode="HTML", reply_markup=markup)
+    else:
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+
+# --- REFER & EARN SYSTEM ---
+@router.callback_query(F.data == "refer_earn")
+async def btn_refer_earn(call: CallbackQuery, bot: Bot):
+    await call.answer()
+    user_id = call.from_user.id
+    bot_user = await get_bot_username(bot)
+
+    stats = await db.get_user_referral_stats(user_id)
+    ref_count = stats.get("referral_count", 0)
+    is_premium = stats.get("is_premium", 0)
+
+    filled = min(ref_count, 5)
+    progress_bar = "🟩" * filled + "⬜" * (5 - filled)
+    ref_link = f"https://t.me/{bot_user}?start=ref_{user_id}"
+
+    if ref_count >= 5 or is_premium:
+        status_line = f"🎉 <b>Status:</b> <code>1-Month VIP Active & Unlocked!</code>"
+    else:
+        status_line = f"🎯 <b>Remaining:</b> <code>{5 - ref_count} more referrals needed for FREE VIP</code>"
+
+    text = (
+        f"╔══════════════════════════╗\n"
+        f"  🎁 <b>REFER & EARN FREE VIP</b> {EMOJI_ROCKET}\n"
+        f"╚══════════════════════════╝\n"
+        f"Apne dosto ko bot refer karein aur <b>1-Month VIP Access bilkul FREE</b> payein!\n\n"
+        f"┌ 👥 <b>Your Successful Referrals:</b> <code>{ref_count}</code> / <code>5</code>\n"
+        f"├ 📊 <b>Progress:</b> {progress_bar}\n"
+        f"└ {status_line}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔗 <b>Your Exclusive Referral Link:</b>\n"
+        f"<code>{ref_link}</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💡 <i>Upar diye gaye link ko copy karke dosto ya groups me share karein. Jaise hi 5 users bot start karenge, aapka 1 Month VIP automatically unlock ho jayega!</i>\n\n"
+        f"👑 <b>Powered by:</b> <a href='https://t.me/SHADOW_SELLER07'>@SHADOW_SELLER07</a>"
+    )
+
+    share_text = "Turn your Alt account into an automated Telegram AdsBot with free trial and bulk power!"
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Share Link with Friends", url=f"https://t.me/share/url?url={ref_link}&text={share_text}")],
+        [InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)]
+    ])
+
+    if call.message.photo:
+        await call.message.delete()
+        await call.message.answer(text, parse_mode="HTML", reply_markup=markup)
+    else:
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)

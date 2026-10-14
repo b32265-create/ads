@@ -59,14 +59,22 @@ async def init_db():
         # 1. USERS TABLE
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            user_id     BIGINT PRIMARY KEY,
-            username    TEXT,
-            first_name  TEXT,
-            joined_at   TIMESTAMPTZ DEFAULT NOW(),
-            is_banned   SMALLINT DEFAULT 0,
-            is_premium  SMALLINT DEFAULT 0
+            user_id            BIGINT PRIMARY KEY,
+            username           TEXT,
+            first_name         TEXT,
+            joined_at          TIMESTAMPTZ DEFAULT NOW(),
+            is_banned          SMALLINT DEFAULT 0,
+            is_premium         SMALLINT DEFAULT 0,
+            referred_by        BIGINT DEFAULT NULL,
+            referral_count     INTEGER DEFAULT 0,
+            premium_expires_at TIMESTAMPTZ DEFAULT NULL
         );
         """)
+
+        # Migrations for existing deployments
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT DEFAULT NULL;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INTEGER DEFAULT 0;")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_expires_at TIMESTAMPTZ DEFAULT NULL;")
 
         # 2. USER SETTINGS TABLE
         await conn.execute("""
@@ -538,3 +546,90 @@ async def get_all_bot_settings() -> Dict[str, str]:
         res = {r['key']: r['value'] for r in rows}
         _cache_bot_settings.update(res)
         return res
+
+# ─────────────────────────────────────────────────────────
+# REFERRAL & REWARD OPERATIONS
+# ─────────────────────────────────────────────────────────
+async def record_user_referral(new_user_id: int, referrer_id: int) -> Tuple[bool, int, bool]:
+    """
+    Records a referral if new_user_id is not self and not already referred.
+    Returns: (is_counted: bool, new_referral_count: int, unlocked_reward: bool)
+    """
+    if new_user_id == referrer_id:
+        return False, 0, False
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        # Check if referrer exists
+        ref_exists = await conn.fetchval("SELECT user_id FROM users WHERE user_id = $1", referrer_id)
+        if not ref_exists:
+            return False, 0, False
+
+        # Check if new user already has a referrer
+        existing_ref = await conn.fetchval("SELECT referred_by FROM users WHERE user_id = $1", new_user_id)
+        if existing_ref is not None:
+            return False, 0, False
+
+        # Set referred_by on new user
+        await conn.execute("UPDATE users SET referred_by = $1 WHERE user_id = $2", referrer_id, new_user_id)
+
+        # Increment referrer's count
+        new_count = await conn.fetchval(
+            "UPDATE users SET referral_count = COALESCE(referral_count, 0) + 1 WHERE user_id = $1 RETURNING referral_count",
+            referrer_id
+        )
+        if new_count is None:
+            return False, 0, False
+
+        unlocked_reward = False
+        # If user hit 5 referrals, grant 1 month VIP premium access!
+        if new_count >= 5:
+            ref_info = await conn.fetchrow("SELECT is_premium FROM users WHERE user_id = $1", referrer_id)
+            if ref_info and ref_info["is_premium"] == 0:
+                await conn.execute("""
+                    UPDATE users 
+                    SET is_premium = 1, premium_expires_at = NOW() + INTERVAL '30 days'
+                    WHERE user_id = $1
+                """, referrer_id)
+                unlocked_reward = True
+                _cache_user_info.pop(referrer_id, None)
+
+        return True, new_count, unlocked_reward
+
+async def get_user_referral_stats(user_id: int) -> Dict[str, Any]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT referral_count, referred_by, is_premium, premium_expires_at FROM users WHERE user_id = $1",
+            user_id
+        )
+        if row:
+            return dict(row)
+        return {"referral_count": 0, "referred_by": None, "is_premium": 0, "premium_expires_at": None}
+
+async def set_user_premium_status(user_id: int, is_premium: int = 1, days: Optional[int] = None):
+    _cache_user_info.pop(user_id, None)
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if days:
+            await conn.execute(
+                f"UPDATE users SET is_premium = $1, premium_expires_at = NOW() + INTERVAL '{days} days' WHERE user_id = $2",
+                is_premium, user_id
+            )
+        else:
+            await conn.execute(
+                "UPDATE users SET is_premium = $1, premium_expires_at = NULL WHERE user_id = $2",
+                is_premium, user_id
+            )
+
+# ─────────────────────────────────────────────────────────
+# LOG ACCOUNT OPERATIONS
+# ─────────────────────────────────────────────────────────
+async def get_log_account() -> str:
+    val = await get_bot_setting("log_account_username", "")
+    return val or ""
+
+async def set_log_account(username: str):
+    clean = username.replace("@", "").replace("https://t.me/", "").strip()
+    await set_bot_setting("log_account_username", clean)
+

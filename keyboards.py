@@ -45,12 +45,15 @@ def get_dashboard_keyboard(
             InlineKeyboardButton(text="Analytics", callback_data="analytics", icon_custom_emoji_id=ID_DIAMOND),
         ],
         [
-            InlineKeyboardButton(text="Premium", callback_data="premium", icon_custom_emoji_id=ID_DIAMOND),
+            InlineKeyboardButton(text="Premium (₹100)", callback_data="premium", icon_custom_emoji_id=ID_DIAMOND),
+            InlineKeyboardButton(text="Refer & Earn (Free VIP)", callback_data="refer_earn", icon_custom_emoji_id=ID_GIFT),
+        ],
+        [
             InlineKeyboardButton(text="Auto Join Groups", callback_data="auto_join_groups", icon_custom_emoji_id=ID_TARGET),
+            InlineKeyboardButton(text="Delete Accounts", callback_data="delete_accounts", icon_custom_emoji_id=ID_TRASH),
         ],
         [
             InlineKeyboardButton(text=sched_text, callback_data="schedule_ads", icon_custom_emoji_id=sched_icon),
-            InlineKeyboardButton(text="Delete Accounts", callback_data="delete_accounts", icon_custom_emoji_id=ID_TRASH),
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -169,10 +172,11 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="Manage Force Join", callback_data="admin_fsub", icon_custom_emoji_id=ID_TARGET),
         ],
         [
-            InlineKeyboardButton(text="Global Settings", callback_data="admin_settings", icon_custom_emoji_id=ID_HEART_FIRE),
+            InlineKeyboardButton(text="Log Account Config", callback_data="admin_log_account", icon_custom_emoji_id=ID_STAR),
             InlineKeyboardButton(text="Mass Join (All Accs)", callback_data="admin_mass_join", icon_custom_emoji_id=ID_ROCKET),
         ],
         [
+            InlineKeyboardButton(text="Global Settings", callback_data="admin_settings", icon_custom_emoji_id=ID_HEART_FIRE),
             InlineKeyboardButton(text="Close Admin Panel", callback_data="admin_close", icon_custom_emoji_id=ID_BACK)
         ]
     ]
