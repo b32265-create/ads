@@ -670,19 +670,27 @@ async def admin_mass_join_prompt(call: CallbackQuery, state: FSMContext):
     if not is_admin(call.from_user.id): return
     await call.answer()
 
-    total_accs = await db.get_total_accounts()
+    active_accs = await db.get_all_active_accounts()
+    total_accs = len(active_accs)
     
     text = (
         f"╔══════════════════════════╗\n"
-        f"  {EMOJI_ROCKET} <b>MASS JOIN TO ALL ACCOUNTS</b>\n"
+        f"  {EMOJI_ROCKET} <b>MASS JOIN TO ACCOUNTS</b>\n"
         f"╚══════════════════════════╝\n"
+        f"📱 <b>Total Active Accounts Available:</b> <code>{total_accs}</code>\n\n"
         f"Yahan Public username ya Private invite link enter karein.\n"
-        f"Bot sabhi <b>{total_accs:,}</b> hosted active accounts se <b>10 seconds ke timer gap</b> par 1-by-1 us link ko join karwayega:\n\n"
+        f"Aap space dekar <b>Limit (Number of Accounts)</b> bhi likh sakte hain:\n\n"
         f"• <b>Public Channel/Group:</b> <code>@username</code> ya <code>https://t.me/username</code>\n"
         f"• <b>Private Invite Link:</b> <code>https://t.me/+inviteHash</code> ya <code>https://t.me/joinchat/...</code>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💡 <b>Format / Examples:</b>\n"
+        f"1️⃣ <code>https://t.me/+inviteHash 10</code>\n"
+        f"   👉 <i>(Sirf 10 accounts request send karenge / join karenge)</i>\n\n"
+        f"2️⃣ <code>https://t.me/+inviteHash</code>\n"
+        f"   👉 <i>(Saare available {total_accs} accounts join karenge)</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"🛡️ <i>Anti-Ban Safety: 10s gap per account enforced.</i>\n\n"
-        f"👉 <i>Channel/Group link yahan send karein:</i>"
+        f"👉 <i>Channel/Group link aur optional count yahan send karein:</i>"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Cancel", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
@@ -711,7 +719,20 @@ async def process_admin_mass_join(message: Message, bot: Bot, state: FSMContext)
         )
         return
 
-    link = message.text.strip()
+    raw_text = message.text.strip()
+    if not raw_text:
+        await message.answer(f"{EMOJI_CROSS} Invalid link.", reply_markup=kb.get_admin_keyboard())
+        return
+
+    # Parse link and optional account count limit (e.g. 'https://t.me/+hash 10')
+    parts = raw_text.split()
+    limit = None
+    if len(parts) > 1 and parts[-1].isdigit():
+        limit = int(parts[-1])
+        link = " ".join(parts[:-1]).strip()
+    else:
+        link = parts[0].strip()
+
     if not link:
         await message.answer(f"{EMOJI_CROSS} Invalid link.", reply_markup=kb.get_admin_keyboard())
         return
@@ -729,9 +750,14 @@ async def process_admin_mass_join(message: Message, bot: Bot, state: FSMContext)
         )
         return
 
-    total = len(accounts)
-    est_sec = total * 10
+    total_available = len(accounts)
+    if limit and limit > 0:
+        accounts = accounts[:limit]
+
+    total_to_process = len(accounts)
+    est_sec = total_to_process * 10
     est_str = f"{est_sec // 60}m {est_sec % 60}s" if est_sec >= 60 else f"{est_sec}s"
+    limit_note = f"<code>{total_to_process}</code> (Limit out of {total_available} available)" if limit else f"<code>{total_to_process}</code> (All Available)"
 
     cancel_markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Stop / Cancel Mass Join", callback_data="cancel_mass_join", icon_custom_emoji_id=ID_PAUSED)]
@@ -742,11 +768,11 @@ async def process_admin_mass_join(message: Message, bot: Bot, state: FSMContext)
         f"  {EMOJI_ROCKET} <b>MASS JOIN INITIATED</b>\n"
         f"╚══════════════════════════╝\n"
         f"┌ 🔗 <b>Target:</b> <code>{link}</code>\n"
-        f"├ 📱 <b>Total Accounts:</b> <code>{total}</code>\n"
+        f"├ 📱 <b>Requested Accounts:</b> {limit_note}\n"
         f"├ ⏱️ <b>Timer Gap:</b> <code>10 seconds</code>\n"
         f"└ ⏳ <b>Estimated Time:</b> <code>~{est_str}</code>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🔄 <i>Mass join background me chalu ho gaya hai. Har account 10s ke gap me join karega...</i>",
+        f"🔄 <i>Mass join background me chalu ho gaya hai. Har account 10s ke gap me join/request karega...</i>",
         parse_mode="HTML",
         reply_markup=cancel_markup
     )
@@ -768,6 +794,7 @@ async def run_mass_join_worker(bot: Bot, admin_chat_id: int, status_message_id: 
     global _is_mass_join_running, _mass_join_cancelled
     total = len(accounts)
     success = 0
+    requested = 0
     already = 0
     failed = 0
     was_cancelled = False
@@ -802,6 +829,8 @@ async def run_mass_join_worker(bot: Bot, admin_chat_id: int, status_message_id: 
                 if ok:
                     if "Already" in note:
                         already += 1
+                    elif "request" in note.lower():
+                        requested += 1
                     else:
                         success += 1
                 else:
@@ -811,8 +840,8 @@ async def run_mass_join_worker(bot: Bot, admin_chat_id: int, status_message_id: 
             failed += 1
             logger.error(f"Mass join error for {phone}: {e}")
 
-        # Update progress card every 3 accounts or when finished/cancelled
-        if idx % 3 == 0 or idx == total or _mass_join_cancelled:
+        # Update progress card every 2 accounts or when finished/cancelled
+        if idx % 2 == 0 or idx == total or _mass_join_cancelled:
             try:
                 progress_pct = int((idx / total) * 100)
                 await bot.edit_message_text(
@@ -825,6 +854,7 @@ async def run_mass_join_worker(bot: Bot, admin_chat_id: int, status_message_id: 
                         f"┌ 🔗 <b>Target:</b> <code>{target_link}</code>\n"
                         f"├ 📱 <b>Processed:</b> <code>{idx}/{total} accounts</code>\n"
                         f"├ {EMOJI_VERIFIED} <b>New Joined:</b> <code>{success}</code>\n"
+                        f"├ 📩 <b>Requests Sent:</b> <code>{requested}</code>\n"
                         f"├ {EMOJI_USER} <b>Already Member:</b> <code>{already}</code>\n"
                         f"└ {EMOJI_CROSS} <b>Failed/Banned:</b> <code>{failed}</code>\n"
                         f"━━━━━━━━━━━━━━━━━━━━━\n"
@@ -860,6 +890,7 @@ async def run_mass_join_worker(bot: Bot, admin_chat_id: int, status_message_id: 
                 f"┌ 🔗 <b>Target:</b> <code>{target_link}</code>\n"
                 f"├ 📱 <b>Total Accounts:</b> <code>{total}</code>\n"
                 f"├ {EMOJI_VERIFIED} <b>Successfully Joined:</b> <code>{success}</code>\n"
+                f"├ 📩 <b>Join Requests Sent:</b> <code>{requested}</code>\n"
                 f"├ {EMOJI_USER} <b>Already Members:</b> <code>{already}</code>\n"
                 f"└ {EMOJI_CROSS} <b>Failed / Inaccessible:</b> <code>{failed}</code>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━\n"
