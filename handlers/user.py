@@ -256,7 +256,7 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
         f"Only AdsBot with free trial on telegram.\n"
         f"Which provide almost all premium features in free kisi bhi tarike ka bot self promotion banner nhi lagega, nah hi naam ke piche via @xyz lagega nah hi bio me koi link aayega.\n"
         f"Work as normal account with bulk power.\n\n"
-        f"Start the bot to begin your impactful advertisement journey with Tecxo.\n"
+        f"Start the bot to begin your impactful advertisement journey with SHADOWS.\n"
         f"{log_section}"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"Powered by: <a href='https://t.me/SHADOW_SELLER07'>@SHADOW_SELLER07</a>"
