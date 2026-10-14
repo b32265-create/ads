@@ -16,6 +16,10 @@ import database as db
 import keyboards as kb
 from config import API_ID, API_HASH
 from handlers.user import show_dashboard
+from emojis import (
+    EMOJI_WARNING, EMOJI_MOON, EMOJI_VERIFIED, EMOJI_CROSS, EMOJI_STATS,
+    EMOJI_FIRE, EMOJI_CLOCK, EMOJI_ROCKET
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +102,7 @@ async def run_user_ad_campaign(bot: Bot, user_id: int):
                 await db.update_user_setting(user_id, "status", "Paused")
                 await bot.send_message(
                     user_id,
-                    "⚠️ <b>Ad Campaign Paused!</b>\n\n"
+                    f"{EMOJI_WARNING} <b>Ad Campaign Paused!</b>\n\n"
                     "Ad message ya media set nahi hai. Dashboard se pehle ad set karein.",
                     parse_mode="HTML"
                 )
@@ -116,7 +120,7 @@ async def run_user_ad_campaign(bot: Bot, user_id: int):
                 await db.update_user_setting(user_id, "status", "Paused")
                 await bot.send_message(
                     user_id,
-                    "⚠️ <b>Ad Campaign Paused!</b>\n\n"
+                    f"{EMOJI_WARNING} <b>Ad Campaign Paused!</b>\n\n"
                     "Koi active account nahi mila. Naya account add karein.",
                     parse_mode="HTML"
                 )
@@ -226,7 +230,7 @@ async def run_user_ad_campaign(bot: Bot, user_id: int):
                 names = "\n".join(f"• {n}" for n in banned_accounts)
                 await bot.send_message(
                     user_id,
-                    f"🚨 <b>Anti-Ban Alert!</b>\n\n"
+                    f"{EMOJI_WARNING} <b>Anti-Ban Alert!</b>\n\n"
                     f"Niche diye account(s) ban/expired ho gaye hain aur automatically disable kar diye gaye:\n"
                     f"{names}\n\n"
                     f"Please inhe <b>My Accounts</b> se remove karke naye accounts add karein.",
@@ -240,10 +244,10 @@ async def run_user_ad_campaign(bot: Bot, user_id: int):
             # 8. Send detailed cycle notification
             total_analytics = await db.get_analytics(user_id)
             notif_msg = (
-                f"🔔 <b>Cycle #{new_cycles} Complete!</b>\n\n"
-                f"• ✅ Sent this cycle: <code>{cycle_sent}</code>\n"
-                f"• ❌ Failed this cycle: <code>{cycle_failed}</code>\n"
-                f"• 📊 Total All-time Sent: <code>{total_analytics.get('total_sent', 0)}</code>\n"
+                f"{EMOJI_MOON} <b>Cycle #{new_cycles} Complete!</b>\n\n"
+                f"• {EMOJI_VERIFIED} Sent this cycle: <code>{cycle_sent}</code>\n"
+                f"• {EMOJI_CROSS} Failed this cycle: <code>{cycle_failed}</code>\n"
+                f"• {EMOJI_STATS} Total All-time Sent: <code>{total_analytics.get('total_sent', 0)}</code>\n"
             )
 
             max_c = settings.get("max_cycles", 0)
@@ -252,7 +256,7 @@ async def run_user_ad_campaign(bot: Bot, user_id: int):
                 await bot.send_message(
                     user_id,
                     notif_msg +
-                    f"\n🎉 <b>Campaign Finished!</b>\n"
+                    f"\n{EMOJI_FIRE} <b>Campaign Finished!</b>\n"
                     f"Saare {max_c} cycles complete ho gaye. Campaign auto-paused!",
                     parse_mode="HTML"
                 )
@@ -263,7 +267,7 @@ async def run_user_ad_campaign(bot: Bot, user_id: int):
                 await bot.send_message(
                     user_id,
                     notif_msg +
-                    f"\n⏳ Agli cycle <b>{mins}m</b> baad shuru hogi...",
+                    f"\n{EMOJI_CLOCK} Agli cycle <b>{mins}m</b> baad shuru hogi...",
                     parse_mode="HTML"
                 )
                 # Sleep for cycle interval
@@ -276,7 +280,7 @@ async def run_user_ad_campaign(bot: Bot, user_id: int):
         try:
             await bot.send_message(
                 user_id,
-                f"❌ <b>Campaign Error!</b>\n\n<code>{e}</code>\n\nCampaign auto-paused. Dashboard se restart karein.",
+                f"{EMOJI_CROSS} <b>Campaign Error!</b>\n\n<code>{e}</code>\n\nCampaign auto-paused. Dashboard se restart karein.",
                 parse_mode="HTML"
             )
             await db.update_user_setting(user_id, "status", "Paused")

@@ -11,6 +11,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject, Message, CallbackQuery
 from typing import Callable, Dict, Any, Awaitable
 import database as db
+from emojis import EMOJI_WARNING
 from handlers import user, account, ads_worker, admin
 
 class MaintenanceMiddleware(BaseMiddleware):
@@ -27,7 +28,7 @@ class MaintenanceMiddleware(BaseMiddleware):
             if user_id and user_id not in ADMIN_IDS:
                 if isinstance(event, Message):
                     await event.answer(
-                        "🚧 <b>Bot Under Maintenance</b>\n\n"
+                        f"{EMOJI_WARNING} <b>Bot Under Maintenance</b>\n\n"
                         "Hum bot par zaroori upgrades aur optimization kar rahe hain.\n"
                         "Kripya thodi der baad dobara start karein.",
                         parse_mode="HTML"
