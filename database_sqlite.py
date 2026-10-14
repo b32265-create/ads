@@ -648,3 +648,49 @@ async def has_user_messaged_accounts(user_id: int):
 async def close_pool():
     """No-op for SQLite engine."""
     pass
+
+# --- REFERRAL & REWARDS ---
+async def record_user_referral(new_user_id: int, referrer_id: int):
+    if new_user_id == referrer_id:
+        return False, 0, False
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT user_id FROM users WHERE user_id = ?", (referrer_id,)) as cur:
+            if not await cur.fetchone():
+                return False, 0, False
+
+        async with db.execute("SELECT referred_by FROM users WHERE user_id = ?", (new_user_id,)) as cur:
+            row = await cur.fetchone()
+            if row and row[0] is not None:
+                return False, 0, False
+
+        await db.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, new_user_id))
+        await db.execute("UPDATE users SET referral_count = COALESCE(referral_count, 0) + 1 WHERE user_id = ?", (referrer_id,))
+        
+        # Add 2 days VIP premium
+        await db.execute("""
+            UPDATE users 
+            SET is_premium = 1,
+                premium_expires_at = datetime(
+                    CASE 
+                        WHEN premium_expires_at IS NOT NULL AND datetime(premium_expires_at) > datetime('now')
+                        THEN datetime(premium_expires_at, '+2 days')
+                        ELSE datetime('now', '+2 days')
+                    END
+                )
+            WHERE user_id = ?
+        """, (referrer_id,))
+        await db.commit()
+
+        async with db.execute("SELECT referral_count FROM users WHERE user_id = ?", (referrer_id,)) as cur:
+            row = await cur.fetchone()
+            cnt = row[0] if row else 1
+            return True, cnt, True
+
+async def get_user_referral_stats(user_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT referral_count, referred_by, is_premium, premium_expires_at FROM users WHERE user_id = ?", (user_id,)) as cur:
+            row = await cur.fetchone()
+            if row:
+                return dict(row)
+            return {"referral_count": 0, "referred_by": None, "is_premium": 0, "premium_expires_at": None}

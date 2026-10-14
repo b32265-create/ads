@@ -625,6 +625,7 @@ async def get_all_bot_settings() -> Dict[str, str]:
 async def record_user_referral(new_user_id: int, referrer_id: int) -> Tuple[bool, int, bool]:
     """
     Records a referral if new_user_id is not self and not already referred.
+    Every 1 referral grants +2 days of VIP Premium access to referrer!
     Returns: (is_counted: bool, new_referral_count: int, unlocked_reward: bool)
     """
     if new_user_id == referrer_id:
@@ -653,20 +654,20 @@ async def record_user_referral(new_user_id: int, referrer_id: int) -> Tuple[bool
         if new_count is None:
             return False, 0, False
 
-        unlocked_reward = False
-        # If user hit 5 referrals, grant 1 month VIP premium access!
-        if new_count >= 5:
-            ref_info = await conn.fetchrow("SELECT is_premium FROM users WHERE user_id = $1", referrer_id)
-            if ref_info and ref_info["is_premium"] == 0:
-                await conn.execute("""
-                    UPDATE users 
-                    SET is_premium = 1, premium_expires_at = NOW() + INTERVAL '30 days'
-                    WHERE user_id = $1
-                """, referrer_id)
-                unlocked_reward = True
-                _cache_user_info.pop(referrer_id, None)
+        # Reward: 1 referral = 2 days VIP premium access!
+        await conn.execute("""
+            UPDATE users 
+            SET is_premium = 1,
+                premium_expires_at = CASE 
+                    WHEN premium_expires_at IS NOT NULL AND premium_expires_at > NOW() 
+                    THEN premium_expires_at + INTERVAL '2 days'
+                    ELSE NOW() + INTERVAL '2 days'
+                END
+            WHERE user_id = $1
+        """, referrer_id)
+        _cache_user_info.pop(referrer_id, None)
 
-        return True, new_count, unlocked_reward
+        return True, new_count, True
 
 async def get_user_referral_stats(user_id: int) -> Dict[str, Any]:
     pool = await get_pool()
