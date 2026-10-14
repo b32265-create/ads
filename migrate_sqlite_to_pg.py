@@ -70,9 +70,10 @@ async def migrate():
                             user_id, ad_message, ad_media_id, ad_media_type,
                             cycle_interval, message_delay, target_type,
                             max_cycles, completed_cycles, status, ai_reply,
-                            exclude_groups, schedule_start, schedule_end, schedule_enabled
+                            exclude_groups, schedule_start, schedule_end, schedule_enabled,
+                            manager_enabled
                         )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                         ON CONFLICT (user_id) DO UPDATE SET
                             ad_message = EXCLUDED.ad_message,
                             ad_media_id = EXCLUDED.ad_media_id,
@@ -87,12 +88,14 @@ async def migrate():
                             exclude_groups = EXCLUDED.exclude_groups,
                             schedule_start = EXCLUDED.schedule_start,
                             schedule_end = EXCLUDED.schedule_end,
-                            schedule_enabled = EXCLUDED.schedule_enabled
+                            schedule_enabled = EXCLUDED.schedule_enabled,
+                            manager_enabled = EXCLUDED.manager_enabled
                     """,
                         s['user_id'], s['ad_message'], s['ad_media_id'], s['ad_media_type'],
                         s['cycle_interval'], s['message_delay'], s['target_type'],
                         s['max_cycles'], s['completed_cycles'], s['status'], s['ai_reply'],
-                        s['exclude_groups'], s['schedule_start'], s['schedule_end'], s['schedule_enabled']
+                        s['exclude_groups'], s['schedule_start'], s['schedule_end'], s['schedule_enabled'],
+                        s['manager_enabled'] if 'manager_enabled' in s.keys() else 1
                     )
             logger.info(f"✅ Migrated {len(settings)} user settings.")
 

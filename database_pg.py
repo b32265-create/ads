@@ -93,7 +93,8 @@ async def init_db():
             exclude_groups   TEXT DEFAULT '',
             schedule_start   TEXT DEFAULT NULL,
             schedule_end     TEXT DEFAULT NULL,
-            schedule_enabled SMALLINT DEFAULT 0
+            schedule_enabled SMALLINT DEFAULT 0,
+            manager_enabled  SMALLINT DEFAULT 1
         );
         """)
 
@@ -184,6 +185,7 @@ async def init_db():
 
         # Migrations for user_settings
         await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS forward_account TEXT DEFAULT NULL;")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS manager_enabled SMALLINT DEFAULT 1;")
 
         # ── INDEXES for performance ──────────────────────
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_accounts_user_id   ON accounts(user_id);")
@@ -340,7 +342,8 @@ _ALLOWED_SETTING_KEYS = {
     'ad_message', 'ad_media_id', 'ad_media_type', 'cycle_interval',
     'message_delay', 'target_type', 'max_cycles', 'completed_cycles',
     'status', 'ai_reply', 'exclude_groups',
-    'schedule_start', 'schedule_end', 'schedule_enabled'
+    'schedule_start', 'schedule_end', 'schedule_enabled',
+    'forward_account', 'manager_enabled'
 }
 
 async def get_user_settings(user_id: int) -> Dict:

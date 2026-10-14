@@ -149,22 +149,24 @@ async def start_account_dm_listener(account_dict: dict, bot: Bot):
             except Exception as e:
                 logger.error(f"Failed to send lead notification to user {user_id}: {e}")
 
-            # 3. Log to Admin Manager Account if configured
-            manager_acc = await db.get_manager_account()
-            if manager_acc:
-                try:
-                    # If manager is numeric ID or username
-                    manager_dest = int(manager_acc) if (manager_acc.startswith("-") or manager_acc.isdigit()) else manager_acc
-                    mgr_text = (
-                        f"📡 <b>[MANAGER LEAD LOG]</b>\n"
-                        f"• <b>Customer ID:</b> <code>{user_id}</code>\n"
-                        f"• <b>Ads Account:</b> @{alt_username}\n"
-                        f"• <b>Lead:</b> {lead_user_link} (ID: <code>{lead_id}</code>)\n"
-                        f"• <b>Message:</b> {text}"
-                    )
-                    await bot.send_message(manager_dest, mgr_text, parse_mode="HTML")
-                except Exception:
-                    pass
+            # 3. Log to Admin Manager Account if configured and user has manager_enabled != 0
+            user_settings = await db.get_user_settings(user_id)
+            if user_settings.get("manager_enabled", 1):
+                manager_acc = await db.get_manager_account()
+                if manager_acc:
+                    try:
+                        # If manager is numeric ID or username
+                        manager_dest = int(manager_acc) if (manager_acc.startswith("-") or manager_acc.isdigit()) else manager_acc
+                        mgr_text = (
+                            f"📡 <b>[MANAGER LEAD LOG]</b>\n"
+                            f"• <b>Customer ID:</b> <code>{user_id}</code>\n"
+                            f"• <b>Ads Account:</b> @{alt_username}\n"
+                            f"• <b>Lead:</b> {lead_user_link} (ID: <code>{lead_id}</code>)\n"
+                            f"• <b>Message:</b> {text}"
+                        )
+                        await bot.send_message(manager_dest, mgr_text, parse_mode="HTML")
+                    except Exception:
+                        pass
 
         except Exception as e:
             logger.error(f"Error processing incoming DM on account {acc_id}: {e}")

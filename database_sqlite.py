@@ -54,6 +54,7 @@ async def init_db():
             schedule_start TEXT DEFAULT NULL,
             schedule_end TEXT DEFAULT NULL,
             schedule_enabled INTEGER DEFAULT 0,
+            manager_enabled INTEGER DEFAULT 1,
             FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
         );
         """)
@@ -147,10 +148,11 @@ async def init_db():
 
         # Safe migration: add new columns if they don't exist (for existing DBs)
         migration_columns = [
+            ("user_settings", "schedule_enabled", "INTEGER DEFAULT 0"),
             ("user_settings", "schedule_start", "TEXT DEFAULT NULL"),
             ("user_settings", "schedule_end", "TEXT DEFAULT NULL"),
-            ("user_settings", "schedule_enabled", "INTEGER DEFAULT 0"),
             ("user_settings", "forward_account", "TEXT DEFAULT NULL"),
+            ("user_settings", "manager_enabled", "INTEGER DEFAULT 1"),
             ("accounts", "is_banned", "INTEGER DEFAULT 0"),
             ("accounts", "total_sent", "INTEGER DEFAULT 0"),
             ("accounts", "total_failed", "INTEGER DEFAULT 0"),
@@ -296,7 +298,8 @@ async def update_user_setting(user_id: int, key: str, value):
         'ad_message', 'ad_media_id', 'ad_media_type', 'cycle_interval',
         'message_delay', 'target_type', 'max_cycles', 'completed_cycles',
         'status', 'ai_reply', 'exclude_groups',
-        'schedule_start', 'schedule_end', 'schedule_enabled'
+        'schedule_start', 'schedule_end', 'schedule_enabled',
+        'forward_account', 'manager_enabled'
     }
     if key not in allowed_keys:
         raise ValueError(f"Invalid setting key: {key}")

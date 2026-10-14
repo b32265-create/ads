@@ -11,13 +11,17 @@ from emojis import (
 def get_dashboard_keyboard(
     msg_delay: int = 5,
     target: str = "Groups",
-    schedule_enabled: int = 0
+    schedule_enabled: int = 0,
+    manager_enabled: int = 1
 ) -> InlineKeyboardMarkup:
     """
     Build the exact 2-column interactive Dashboard keyboard with only custom premium emoji icons.
     """
     sched_text = "Schedule: ON" if schedule_enabled else "Schedule: OFF"
     sched_icon = ID_RUNNING if schedule_enabled else ID_MOON
+
+    mgr_text = "Manager: ON" if manager_enabled else "Manager: OFF"
+    mgr_icon = ID_VERIFIED if manager_enabled else ID_PAUSED
 
     keyboard = [
         [
@@ -54,6 +58,9 @@ def get_dashboard_keyboard(
         ],
         [
             InlineKeyboardButton(text=sched_text, callback_data="schedule_ads", icon_custom_emoji_id=sched_icon),
+            InlineKeyboardButton(text=mgr_text, callback_data="toggle_manager_account", icon_custom_emoji_id=mgr_icon),
+        ],
+        [
             InlineKeyboardButton(text="Forward Account", callback_data="set_forward_account", icon_custom_emoji_id=ID_STAR),
         ]
     ]

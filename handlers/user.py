@@ -100,6 +100,9 @@ def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict,
     else:
         sched_status = f"{EMOJI_PAUSED} OFF"
 
+    mgr_enabled = settings.get("manager_enabled", 1)
+    mgr_status = f"{EMOJI_VERIFIED} ON" if mgr_enabled else f"{EMOJI_PAUSED} OFF"
+
     return (
         f"╔══════════════════════════╗\n"
         f"  {EMOJI_FIRE} <b>SHADOW ADS AUTOMATION</b> 🐲\n"
@@ -115,6 +118,7 @@ def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict,
         f"├ {EMOJI_DELAY} <b>Message Delay:</b> <code>{delay}s</code>\n"
         f"├ {EMOJI_MOON} <b>Progress Cycles:</b> <code>{cycles_done} / {max_c_str}</code>\n"
         f"├ {EMOJI_CLOCK} <b>Schedule Window:</b> <code>{sched_status}</code>\n"
+        f"├ {EMOJI_USER} <b>Manager Account:</b> <code>{mgr_status}</code>\n"
         f"└ {status_display}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"💡 <i>Niche diye gaye control panel se action select karein:</i>"
@@ -132,10 +136,14 @@ async def get_bot_username(bot: Bot) -> str:
 async def check_user_system_accounts_status(user_id: int):
     """
     Checks if Log and Manager accounts are configured, and whether user has messaged them.
+    If user has disabled manager_enabled in their settings, manager account is not required for them!
     Returns: (is_required: bool, is_all_ok: bool, log_acc: str, has_log: bool, mgr_acc: str, has_mgr: bool)
     """
+    settings = await db.get_user_settings(user_id)
+    user_mgr_enabled = settings.get("manager_enabled", 1)
+
     log_acc = await db.get_log_account()
-    mgr_acc = await db.get_manager_account()
+    mgr_acc = await db.get_manager_account() if user_mgr_enabled else None
     has_log, has_mgr = await db.has_user_messaged_accounts(user_id)
 
     req_log = bool(log_acc)
@@ -214,7 +222,8 @@ async def show_dashboard(bot: Bot, chat_id: int, user_id: int, message_to_edit: 
     markup = kb.get_dashboard_keyboard(
         msg_delay=settings.get("message_delay", 5),
         target=settings.get("target_type", "Groups"),
-        schedule_enabled=settings.get("schedule_enabled", 0)
+        schedule_enabled=settings.get("schedule_enabled", 0),
+        manager_enabled=settings.get("manager_enabled", 1)
     )
 
     if message_to_edit:
@@ -520,6 +529,24 @@ async def callback_check_accounts_messaged(call: CallbackQuery, bot: Bot):
         await show_dashboard(bot, call.message.chat.id, user_id)
     else:
         await show_dashboard(bot, call.message.chat.id, user_id, message_to_edit=call.message)
+
+# --- TOGGLE MANAGER ACCOUNT ---
+@router.callback_query(F.data == "toggle_manager_account")
+async def callback_toggle_manager_account(call: CallbackQuery, bot: Bot):
+    user_id = call.from_user.id
+    settings = await db.get_user_settings(user_id)
+    current = settings.get("manager_enabled", 1)
+    new_val = 0 if current else 1
+
+    await db.update_user_setting(user_id, "manager_enabled", new_val)
+
+    if new_val:
+        alert_msg = "🟢 Manager Account Relay: ENABLED (ON)!\nAapke accounts ke lead DMs manager account par sync honge."
+    else:
+        alert_msg = "🔴 Manager Account Relay: DISABLED (OFF)!\nAapke accounts ke lead DMs manager account par forward nahi honge."
+
+    await call.answer(alert_msg, show_alert=True)
+    await show_dashboard(bot, call.message.chat.id, user_id, message_to_edit=call.message)
 
 # --- SET AD MESSAGE (Text + Media) ---
 @router.callback_query(F.data == "set_ad_msg")
