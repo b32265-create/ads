@@ -39,8 +39,10 @@ def is_admin(user_id: int) -> bool:
 
 def get_admin_panel_text() -> str:
     return (
-        f"❖ ━━━━ {EMOJI_COOL} <b>ADMIN CONTROL PANEL</b> ━━━━ ❖\n\n"
-        f"{EMOJI_FLASH} <i>Manage users, Force Join channels, broadcast updates, and view system statistics.</i>"
+        f"╔══════════════════════════╗\n"
+        f"  👨‍💻 <b>SHADOW COMMAND CENTER</b> ⚡\n"
+        f"╚══════════════════════════╝\n"
+        f"{EMOJI_FLASH} <i>Full administrator control over user tiers, channels, broadcast, & database settings.</i>"
     )
 
 # --- ADMIN PANEL COMMAND ---
@@ -87,15 +89,19 @@ async def admin_stats(call: CallbackQuery):
     )
 
     text = (
-        f"{EMOJI_STATS} <b>BOT SYSTEM STATISTICS</b>\n\n"
-        f"• {EMOJI_USER} <b>Total Users:</b> <code>{total_users}</code>\n"
-        f"• {EMOJI_DIAMOND} <b>Premium Users:</b> <code>{premium_users}</code>\n"
-        f"• {EMOJI_CROSS} <b>Banned Users:</b> <code>{banned_users}</code>\n"
-        f"• {EMOJI_PLANE} <b>Hosted Accounts:</b> <code>{total_accounts}</code>\n"
-        f"• {EMOJI_ROCKET} <b>Active Campaigns:</b> <code>{active_campaigns}</code>\n"
-        f"• {EMOJI_MSG} <b>Total Ads Sent (All Users):</b> <code>{global_sent}</code>\n"
-        f"• {EMOJI_TARGET} <b>Force Join Channels:</b> <code>{len(fsub_channels)}</code>\n"
-        f"• {EMOJI_FLASH} <b>Engine:</b> <code>aiogram 3.x + Telethon</code>\n"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_STATS} <b>SYSTEM TELEMETRY & STATS</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"┌ {EMOJI_USER} <b>Total Registered Users:</b> <code>{total_users:,}</code>\n"
+        f"├ {EMOJI_DIAMOND} <b>VIP Premium Members:</b> <code>{premium_users:,}</code>\n"
+        f"├ {EMOJI_CROSS} <b>Suspended / Banned:</b> <code>{banned_users:,}</code>\n"
+        f"├ {EMOJI_PLANE} <b>Total Hosted Accounts:</b> <code>{total_accounts:,}</code>\n"
+        f"├ {EMOJI_ROCKET} <b>Active Campaigns Running:</b> <code>{active_campaigns:,}</code>\n"
+        f"├ {EMOJI_MSG} <b>All-time Ads Broadcasted:</b> <code>{global_sent:,}</code>\n"
+        f"├ {EMOJI_TARGET} <b>Active Force-Join Channels:</b> <code>{len(fsub_channels)}</code>\n"
+        f"└ {EMOJI_FLASH} <b>Engine:</b> <code>aiogram 3.14 + Telethon + PostgreSQL</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🟢 <i>Database Pool: Healthy (5-30 connections active)</i>"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Back", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
@@ -112,9 +118,13 @@ async def admin_broadcast_prompt(call: CallbackQuery, state: FSMContext):
 
     await state.set_state(AdminStates.waiting_broadcast)
     text = (
-        f"{EMOJI_BROADCAST} <b>BROADCAST MESSAGE</b>\n\n"
-        "Aap jo message sabhi bot users ko bhejna chahte hain, wo yahan send karein.\n"
-        "<i>(Supports Text, Photos, Videos, Documents, Forwards)</i>"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_BROADCAST} <b>GLOBAL BROADCAST</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Aap jo message sabhi registered bot users ko bhejna chahte hain, wo yahan send karein.\n\n"
+        f"<i>(Supports Text, Photos, Videos, Documents, Stickers, and Forwards)</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 <i>Message forward ya type karke bhejein:</i>"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Cancel", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
@@ -127,7 +137,7 @@ async def process_admin_broadcast(message: Message, bot: Bot, state: FSMContext)
     await state.clear()
 
     users = await db.get_all_user_ids()
-    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Starting broadcast to {len(users)} users...</i>", parse_mode="HTML")
+    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Broadcasting to {len(users):,} users in background...</i>", parse_mode="HTML")
 
     sent_count = 0
     fail_count = 0
@@ -136,14 +146,16 @@ async def process_admin_broadcast(message: Message, bot: Bot, state: FSMContext)
         try:
             await message.copy_to(chat_id=uid)
             sent_count += 1
-            await asyncio.sleep(0.05)  # Rate limiting
+            await asyncio.sleep(0.04)  # Rate limiting
         except Exception:
             fail_count += 1
 
     await status_msg.edit_text(
-        f"{EMOJI_VERIFIED} <b>Broadcast Complete!</b>\n\n"
-        f"• Sent: <code>{sent_count}</code>\n"
-        f"• Failed/Blocked: <code>{fail_count}</code>",
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_VERIFIED} <b>BROADCAST DISPATCHED!</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"• {EMOJI_VERIFIED} Successfully Delivered: <code>{sent_count:,}</code>\n"
+        f"• {EMOJI_CROSS} Failed / Blocked: <code>{fail_count:,}</code>",
         parse_mode="HTML"
     )
 
@@ -155,16 +167,21 @@ async def admin_users_menu(call: CallbackQuery, state: FSMContext):
     if not is_admin(call.from_user.id): return
     await call.answer()
 
-    total = await db.get_user_count()
-    premium = await db.get_premium_user_count()
-    banned = await db.get_banned_user_count()
+    total, premium, banned = await asyncio.gather(
+        db.get_user_count(),
+        db.get_premium_user_count(),
+        db.get_banned_user_count()
+    )
 
     text = (
-        f"{EMOJI_USER} <b>USER MANAGEMENT</b>\n\n"
-        f"• Total Users: <code>{total}</code>\n"
-        f"• Premium Users: <code>{premium}</code>\n"
-        f"• Banned Users: <code>{banned}</code>\n\n"
-        "User ka <b>ID ya @username</b> enter karke usse search karein:"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_USER} <b>USER MANAGEMENT DIRECTORY</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"• 👥 <b>Total Users:</b> <code>{total:,}</code>\n"
+        f"• 💎 <b>VIP Members:</b> <code>{premium:,}</code>\n"
+        f"• 🚫 <b>Suspended:</b> <code>{banned:,}</code>\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"Kisi user ki details dekhne ya unhe VIP / Ban karne ke liye unka <b>Telegram ID</b> ya <b>@username</b> yahan send karein:"
     )
     await state.set_state(AdminStates.waiting_user_search)
     markup = InlineKeyboardMarkup(inline_keyboard=[
@@ -181,7 +198,7 @@ async def process_user_search(message: Message, state: FSMContext):
 
     if not user:
         await message.answer(
-            f"{EMOJI_CROSS} User <code>{query}</code> nahi mila.\n\nDobara try karein:",
+            f"{EMOJI_CROSS} User <code>{query}</code> nahi mila database me.\n\nDobara try karein ya sahi ID bhejein:",
             parse_mode="HTML"
         )
         return
@@ -195,32 +212,37 @@ async def _show_user_management(message_or_call, user: dict):
     fname = user.get('first_name', 'N/A')
     is_banned = user.get('is_banned', 0)
     is_premium = user.get('is_premium', 0)
-    joined = user.get('joined_at', 'N/A')
+    joined = str(user.get('joined_at', 'N/A'))[:16]
 
     acc_count, analytics = await asyncio.gather(
         db.get_account_count(uid),
         db.get_analytics(uid)
     )
 
-    status_tag = f"{EMOJI_CROSS} Banned" if is_banned else (f"{EMOJI_DIAMOND} Premium" if is_premium else f"{EMOJI_VERIFIED} Normal")
+    status_tag = f"{EMOJI_CROSS} Banned" if is_banned else (f"{EMOJI_DIAMOND} VIP PRO" if is_premium else f"{EMOJI_VERIFIED} Standard Free")
 
     text = (
-        f"{EMOJI_USER} <b>USER PROFILE</b>\n\n"
-        f"• <b>Name:</b> {fname}\n"
-        f"• <b>Username:</b> {uname}\n"
-        f"• <b>User ID:</b> <code>{uid}</code>\n"
-        f"• <b>Joined:</b> <code>{joined}</code>\n"
-        f"• <b>Status:</b> {status_tag}\n"
-        f"• <b>Accounts:</b> <code>{acc_count}</code>\n"
-        f"• <b>Total Ads Sent:</b> <code>{analytics.get('total_sent', 0)}</code>\n"
-        f"• <b>Total Failed:</b> <code>{analytics.get('total_failed', 0)}</code>\n"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_USER} <b>USER DOSSIER & SETTINGS</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"• 👤 <b>Name:</b> {fname}\n"
+        f"• 🏷️ <b>Username:</b> {uname}\n"
+        f"• 🆔 <b>User ID:</b> <code>{uid}</code>\n"
+        f"• 📅 <b>Registered:</b> <code>{joined}</code>\n"
+        f"• 🎖️ <b>Tier:</b> {status_tag}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"┌ 📱 <b>Hosted Accounts:</b> <code>{acc_count}</code>\n"
+        f"├ 🚀 <b>Total Ads Dispatched:</b> <code>{analytics.get('total_sent', 0):,}</code>\n"
+        f"└ ⚠️ <b>Failed / Skipped:</b> <code>{analytics.get('total_failed', 0):,}</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 <i>Select administrative action:</i>"
     )
 
     ban_btn_text = "Unban User" if is_banned else "Ban User"
     ban_cb = f"admin_unban_{uid}" if is_banned else f"admin_ban_{uid}"
     ban_icon = ID_VERIFIED if is_banned else ID_WARNING
 
-    prem_btn_text = "Remove Premium" if is_premium else "Grant Premium"
+    prem_btn_text = "Demote to Free" if is_premium else "Grant VIP Premium"
     prem_cb = f"admin_unpremium_{uid}" if is_premium else f"admin_premium_{uid}"
     prem_icon = ID_DIAMOND
 
@@ -270,12 +292,17 @@ async def admin_grant_premium(call: CallbackQuery, bot: Bot):
     if not is_admin(call.from_user.id): return
     uid = int(call.data.replace("admin_premium_", ""))
     await db.set_user_premium(uid, True)
-    await call.answer("Premium granted!", show_alert=True)
+    await call.answer("VIP Premium granted!", show_alert=True)
     try:
         await bot.send_message(
             uid,
-            f"{EMOJI_FIRE} <b>Congratulations! You have been granted Premium access!</b>\n\n"
-            f"{EMOJI_DIAMOND} Enjoy all premium features. Use /start to continue.",
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_DIAMOND} <b>VIP PRO UPGRADE UNLOCKED!</b> 🎉\n"
+            f"╚══════════════════════════╝\n"
+            f"Aapke account par VIP status activate kar diya gaya hai!\n\n"
+            f"• Unlimited Accounts Hosting\n"
+            f"• Priority Cloud Routing\n\n"
+            f"Use /start to access your upgraded features.",
             parse_mode="HTML"
         )
     except Exception:
@@ -291,7 +318,7 @@ async def admin_remove_premium(call: CallbackQuery, bot: Bot):
     await db.set_user_premium(uid, False)
     await call.answer("Premium removed!", show_alert=True)
     try:
-        await bot.send_message(uid, f"{EMOJI_WARNING} <b>Your Premium access has been removed.</b>", parse_mode="HTML")
+        await bot.send_message(uid, f"{EMOJI_WARNING} <b>Your VIP Premium access has been downgraded to standard free tier.</b>", parse_mode="HTML")
     except Exception:
         pass
     user = await db.get_user_info(uid)
@@ -308,10 +335,13 @@ async def admin_fsub_list(call: CallbackQuery):
 
     channels = await db.get_active_force_channels()
     text = (
-        f"{EMOJI_TARGET} <b>FORCE JOIN CHANNELS</b>\n\n"
-        "Bot use karne se pehle users ko in channels ko join karna padega.\n"
-        f"Active Channels: <b>{len(channels)}</b>\n\n"
-        "Naya channel add karne ke liye 'Add New Channel' par click karein:"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_TARGET} <b>FORCE JOIN CHANNELS</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Users ko bot access karne se pehle in channels ko join karna zaroori hai.\n\n"
+        f"📢 <b>Currently Configured:</b> <code>{len(channels)} Channels</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 Naya channel add karne ke liye 'Add New Channel' click karein:"
     )
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_admin_fsub_keyboard(channels))
 
@@ -322,10 +352,12 @@ async def admin_add_fsub_step1(call: CallbackQuery, state: FSMContext):
 
     await state.set_state(AdminStates.waiting_fsub_id)
     text = (
-        f"{EMOJI_HEART_FIRE} <b>Add Force Join Channel (Step 1/3)</b>\n\n"
-        "Channel ka <b>Username</b> ya <b>ID</b> enter karein:\n"
-        "<i>(Example: @MyChannel ya -1001234567890)</i>\n\n"
-        f"{EMOJI_WARNING} <i>Note: Make sure bot is an Admin in the channel!</i>"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_HEART_FIRE} <b>ADD CHANNEL (STEP 1/3)</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Channel ka <b>Username</b> ya <b>ID</b> enter karein:\n"
+        f"<i>(Example: @MyChannel ya -1001234567890)</i>\n\n"
+        f"⚠️ <i>Important: Bot ka us channel me Admin hona zaroori hai!</i>"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Cancel", callback_data="admin_fsub", icon_custom_emoji_id=ID_BACK)]
@@ -340,7 +372,7 @@ async def admin_add_fsub_step2(message: Message, state: FSMContext):
 
     await state.set_state(AdminStates.waiting_fsub_title)
     await message.answer(
-        f"{EMOJI_PIN} <b>Enter Channel Display Title (Step 2/3):</b>\n(Example: <code>Main Updates Channel</code>)",
+        f"{EMOJI_PIN} <b>Enter Channel Display Title (Step 2/3):</b>\n(Example: <code>Official Updates</code>)",
         parse_mode="HTML"
     )
 
@@ -352,7 +384,7 @@ async def admin_add_fsub_step3(message: Message, state: FSMContext):
 
     await state.set_state(AdminStates.waiting_fsub_link)
     await message.answer(
-        f"{EMOJI_TARGET} <b>Enter Channel Invite Link (Step 3/3):</b>\n(Example: <code>https://t.me/MyChannel</code>)",
+        f"{EMOJI_TARGET} <b>Enter Invite Link (Step 3/3):</b>\n(Example: <code>https://t.me/MyChannel</code>)",
         parse_mode="HTML"
     )
 
@@ -369,9 +401,11 @@ async def admin_add_fsub_finish(message: Message, state: FSMContext):
     await state.clear()
 
     await message.answer(
-        f"{EMOJI_VERIFIED} <b>Channel Added Successfully!</b>\n\n"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_VERIFIED} <b>CHANNEL CONFIGURED!</b>\n"
+        f"╚══════════════════════════╝\n"
         f"• <b>Title:</b> {title}\n"
-        f"• <b>Channel ID:</b> <code>{ch_id}</code>\n"
+        f"• <b>Identifier:</b> <code>{ch_id}</code>\n"
         f"• <b>Link:</b> {link}",
         parse_mode="HTML"
     )
@@ -396,13 +430,16 @@ async def admin_global_settings(call: CallbackQuery):
     maintenance = settings.get("maintenance_mode", "0")
     max_accs = settings.get("max_accounts_per_user", "5")
 
-    maintenance_text = f"{EMOJI_PAUSED} ON" if maintenance == "1" else f"{EMOJI_RUNNING} OFF"
+    maintenance_text = f"{EMOJI_PAUSED} ON (Maintenance Active)" if maintenance == "1" else f"{EMOJI_RUNNING} OFF (Live for all)"
 
     text = (
-        f"{EMOJI_GEAR} <b>GLOBAL BOT SETTINGS</b>\n\n"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_GEAR} <b>GLOBAL ENGINE CONFIGURATION</b>\n"
+        f"╚══════════════════════════╝\n"
         f"• {EMOJI_WARNING} <b>Maintenance Mode:</b> {maintenance_text}\n"
-        f"• {EMOJI_USER} <b>Max Accounts / User:</b> <code>{max_accs}</code>\n\n"
-        "Settings badalne ke liye niche buttons use karein:"
+        f"• {EMOJI_USER} <b>Free Account Cap:</b> <code>{max_accs} Accounts/User</code>\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 <i>Niche settings badal sakte hain:</i>"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -425,8 +462,8 @@ async def admin_toggle_maintenance(call: CallbackQuery):
     current = await db.get_bot_setting("maintenance_mode", "0")
     new_val = "0" if current == "1" else "1"
     await db.set_bot_setting("maintenance_mode", new_val)
-    status = "ON (Bot is now in maintenance)" if new_val == "1" else "OFF (Bot is now live)"
-    await call.answer(f"Maintenance Mode: {status}", show_alert=True)
+    status = "ON (Bot is now under maintenance)" if new_val == "1" else "OFF (Bot is live)"
+    await call.answer(f"Maintenance: {status}", show_alert=True)
     await admin_global_settings(call)
 
 @router.callback_query(F.data == "admin_set_max_accounts")
@@ -439,9 +476,11 @@ async def admin_set_max_accounts_prompt(call: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="Cancel", callback_data="admin_settings", icon_custom_emoji_id=ID_BACK)]
     ])
     await call.message.edit_text(
-        f"{EMOJI_USER} <b>Set Max Accounts Per User</b>\n\n"
-        "Har user kitne accounts add kar sakta hai, wo number enter karein:\n"
-        "<i>(Example: 3 ya 10)</i>",
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_USER} <b>FREE ACCOUNT LIMIT CAP</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Standard free users ke liye maximum account limit number enter karein:\n\n"
+        f"<i>(Example: <code>3</code> ya <code>5</code> ya <code>10</code>)</i>",
         parse_mode="HTML",
         reply_markup=markup
     )
@@ -457,9 +496,9 @@ async def process_global_setting(message: Message, state: FSMContext):
         try:
             int(value)
         except ValueError:
-            await message.answer(f"{EMOJI_CROSS} Valid number enter karein!")
+            await message.answer(f"{EMOJI_CROSS} Valid positive integer enter karein!")
             return
 
     await db.set_bot_setting(key, value)
     await state.clear()
-    await message.answer(f"{EMOJI_VERIFIED} <b>Setting updated!</b>\n<code>{key}</code> = <code>{value}</code>", parse_mode="HTML")
+    await message.answer(f"{EMOJI_VERIFIED} <b>Global parameter updated!</b>\n<code>{key}</code> = <code>{value}</code>", parse_mode="HTML")

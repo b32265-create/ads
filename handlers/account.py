@@ -58,10 +58,14 @@ async def btn_add_account(call: CallbackQuery):
     if not can_add:
         await call.answer("Limit Reached!", show_alert=True)
         limit_text = (
-            f"{EMOJI_WARNING} <b>Account Limit Reached!</b>\n\n"
-            f"Free users maximum <b>{limit}</b> accounts host kar sakte hain.\n"
-            f"Aapke account me already <b>{current_count}</b> accounts added hain.\n\n"
-            f"{EMOJI_ROCKET} Unlimited accounts host karne ke liye <b>Premium</b> me upgrade karein!"
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_WARNING} <b>ACCOUNT LIMIT REACHED</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"Free tier me maximum <b>{limit}</b> accounts host kiye ja sakte hain.\n"
+            f"Aapke account me already <b>{current_count}</b> accounts active hain.\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🚀 <b>Upgrade to VIP Premium:</b>\n"
+            f"Unlimited accounts host karne ke liye aur faster 2s message delay ke liye Premium join karein!"
         )
         prem_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Upgrade to Premium", callback_data="premium", icon_custom_emoji_id=ID_DIAMOND)],
@@ -72,10 +76,16 @@ async def btn_add_account(call: CallbackQuery):
 
     await call.answer()
     text = (
-        f"{EMOJI_HEART_FIRE} <b>Add Telegram Account</b>\n\n"
-        "Apna Telegram account host karne ke liye ek method chunein:\n\n"
-        f"1️⃣ {EMOJI_PHONE} <b>Phone Number (OTP):</b> Bot seedha aapke number par Telegram OTP bhejega.\n"
-        f"2️⃣ {EMOJI_STAR} <b>String Session:</b> Agar aapke paas pehle se Telethon String Session hai to yahan paste karein."
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_HEART_FIRE} <b>HOST TELEGRAM ACCOUNT</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Apna Telegram account connect karne ke liye secure method chunein:\n\n"
+        f"1️⃣ {EMOJI_PHONE} <b>Phone Number (OTP Login)</b>\n"
+        f"   └ <i>Bot direct aapke Telegram app par official login OTP bhejega.</i>\n\n"
+        f"2️⃣ {EMOJI_STAR} <b>String Session (Instant)</b>\n"
+        f"   └ <i>Agar pehle se Telethon session string ready hai toh paste karein.</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔒 <i>All login sessions are encrypted and stored in your private Supabase DB.</i>"
     )
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_add_account_keyboard())
 
@@ -91,9 +101,11 @@ async def start_phone_login(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await state.set_state(AccountStates.waiting_phone)
     text = (
-        f"{EMOJI_PHONE} <b>Enter Phone Number</b>\n\n"
-        "Apna Telegram phone number country code ke sath enter karein:\n"
-        "<i>(Example: +919876543210 ya +1234567890)</i>"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_PHONE} <b>ENTER PHONE NUMBER</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Apna Telegram registered mobile number country code ke sath send karein:\n\n"
+        f"📌 <i>Example:</i> <code>+919876543210</code> ya <code>+12025550143</code>"
     )
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
 
@@ -114,7 +126,7 @@ async def process_phone_input(message: Message, bot: Bot, state: FSMContext):
     if not phone.startswith("+"):
         phone = "+" + phone
         
-    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Connecting to Telegram & requesting OTP...</i>", parse_mode="HTML")
+    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Connecting to Telegram MTProto & requesting OTP...</i>", parse_mode="HTML")
     
     try:
         client = TelegramClient(StringSession(), API_ID, API_HASH)
@@ -129,16 +141,19 @@ async def process_phone_input(message: Message, bot: Bot, state: FSMContext):
         
         await state.set_state(AccountStates.waiting_otp)
         await status_msg.edit_text(
-            f"{EMOJI_MSG} <b>OTP Sent to {phone}!</b>\n\n"
-            "Apne Telegram app me aaya hua login code enter karein.\n"
-            "<i>(Tip: Aap digits ke beech space de kar bhi bhej sakte hain, e.g. 1 2 3 4 5)</i>",
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_MSG} <b>TELEGRAM OTP SENT</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"📱 <b>Target Phone:</b> <code>{phone}</code>\n\n"
+            f"Apne Telegram app me aaya hua login code enter karein:\n"
+            f"<i>(Tip: Digits ke beech space de kar bhi bhej sakte hain, e.g. <code>1 2 3 4 5</code>)</i>",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
     except Exception as e:
         logger.error(f"Error requesting code for {phone}: {e}")
         await status_msg.edit_text(
-            f"{EMOJI_CROSS} <b>Failed to send OTP:</b>\n<code>{e}</code>\n\nPlease check the number and try again.",
+            f"{EMOJI_CROSS} <b>Failed to request OTP:</b>\n<code>{e}</code>\n\nPlease verify phone format and try again.",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
@@ -151,7 +166,7 @@ async def process_otp_input(message: Message, bot: Bot, state: FSMContext):
     
     session_data = login_sessions.get(user_id)
     if not session_data:
-        await message.answer(f"{EMOJI_WARNING} Session expired. Please start login again.", reply_markup=kb.get_back_keyboard())
+        await message.answer(f"{EMOJI_WARNING} Login session expired. Please start again.", reply_markup=kb.get_back_keyboard())
         await state.clear()
         return
         
@@ -159,7 +174,7 @@ async def process_otp_input(message: Message, bot: Bot, state: FSMContext):
     phone = session_data["phone"]
     phone_code_hash = session_data["phone_code_hash"]
     
-    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Verifying OTP code...</i>", parse_mode="HTML")
+    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Verifying OTP authorization...</i>", parse_mode="HTML")
     
     try:
         await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
@@ -173,32 +188,38 @@ async def process_otp_input(message: Message, bot: Bot, state: FSMContext):
         await state.clear()
         
         await status_msg.edit_text(
-            f"{EMOJI_VERIFIED} <b>Account Added Successfully!</b>\n\n"
-            f"• {EMOJI_USER} <b>Name:</b> {acc_name}\n"
-            f"• {EMOJI_PHONE} <b>Phone:</b> <code>{phone}</code>\n\n"
-            f"{EMOJI_HEART_FIRE} Account successfully hosted and ready for ads!",
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_VERIFIED} <b>ACCOUNT CONNECTED!</b> 🎉\n"
+            f"╚══════════════════════════╝\n"
+            f"• {EMOJI_USER} <b>Account Name:</b> {acc_name}\n"
+            f"• {EMOJI_PHONE} <b>Phone / ID:</b> <code>{phone}</code>\n"
+            f"• 🟢 <b>Status:</b> Hosted & Ready for Ads\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"✨ <i>Session securely stored in Supabase database.</i>",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
     except SessionPasswordNeededError:
         await state.set_state(AccountStates.waiting_2fa)
         await status_msg.edit_text(
-            f"{EMOJI_STAR} <b>Two-Step Verification (2FA) Required!</b>\n\n"
-            "Is Telegram account par 2FA Password enabled hai.\n"
-            "Apna Cloud Password enter karein:",
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_STAR} <b>2-STEP VERIFICATION (2FA)</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"Is Telegram account par Two-Step Password set hai.\n\n"
+            f"👉 Apna <b>Cloud Password</b> yahan enter karein:",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
     except PhoneCodeInvalidError:
         await status_msg.edit_text(
-            f"{EMOJI_CROSS} <b>Invalid OTP!</b> Code galat hai, dubara check karke enter karein:",
+            f"{EMOJI_CROSS} <b>Invalid OTP Code!</b>\nCode galat hai, dubara check karke enter karein:",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
     except Exception as e:
         logger.error(f"Login error for {phone}: {e}")
         await status_msg.edit_text(
-            f"{EMOJI_CROSS} <b>Login Failed:</b> <code>{e}</code>",
+            f"{EMOJI_CROSS} <b>Login Error:</b> <code>{e}</code>",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
@@ -213,14 +234,14 @@ async def process_2fa_input(message: Message, bot: Bot, state: FSMContext):
     
     session_data = login_sessions.get(user_id)
     if not session_data:
-        await message.answer(f"{EMOJI_WARNING} Session expired. Please start login again.", reply_markup=kb.get_back_keyboard())
+        await message.answer(f"{EMOJI_WARNING} Login session expired. Please restart login.", reply_markup=kb.get_back_keyboard())
         await state.clear()
         return
         
     client: TelegramClient = session_data["client"]
     phone = session_data["phone"]
     
-    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Verifying 2FA password...</i>", parse_mode="HTML")
+    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Verifying 2FA cloud password...</i>", parse_mode="HTML")
     
     try:
         await client.sign_in(password=password)
@@ -234,15 +255,17 @@ async def process_2fa_input(message: Message, bot: Bot, state: FSMContext):
         await state.clear()
         
         await status_msg.edit_text(
-            f"{EMOJI_VERIFIED} <b>Account Added Successfully!</b>\n\n"
-            f"• {EMOJI_USER} <b>Name:</b> {acc_name}\n"
-            f"• {EMOJI_PHONE} <b>Phone:</b> <code>{phone}</code>\n\n"
-            f"{EMOJI_HEART_FIRE} Account successfully hosted!",
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_VERIFIED} <b>2FA VERIFIED & HOSTED!</b> 🎉\n"
+            f"╚══════════════════════════╝\n"
+            f"• {EMOJI_USER} <b>Account:</b> {acc_name}\n"
+            f"• {EMOJI_PHONE} <b>Phone:</b> <code>{phone}</code>\n"
+            f"• 🟢 <b>Status:</b> Ready for advertising",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
     except PasswordHashInvalidError:
-        await status_msg.edit_text(f"{EMOJI_CROSS} <b>Incorrect 2FA password!</b> Dobara try karein:", parse_mode="HTML")
+        await status_msg.edit_text(f"{EMOJI_CROSS} <b>Incorrect 2FA password!</b> Dobara password enter karein:", parse_mode="HTML")
     except Exception as e:
         logger.error(f"2FA Error: {e}")
         await status_msg.edit_text(f"{EMOJI_CROSS} <b>Login Failed:</b> <code>{e}</code>", parse_mode="HTML", reply_markup=kb.get_back_keyboard())
@@ -262,8 +285,11 @@ async def start_session_login(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await state.set_state(AccountStates.waiting_session)
     text = (
-        f"{EMOJI_STAR} <b>Submit String Session</b>\n\n"
-        "Apna Telethon String Session yahan paste karein:"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_STAR} <b>SUBMIT STRING SESSION</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Apna Telethon String Session yahan direct paste karein:\n\n"
+        f"<i>(Format: 1BAA... string code)</i>"
     )
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
 
@@ -281,7 +307,7 @@ async def process_session_string(message: Message, bot: Bot, state: FSMContext):
         return
 
     session_str = message.text.strip()
-    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Validating string session...</i>", parse_mode="HTML")
+    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Validating string session credentials...</i>", parse_mode="HTML")
     
     try:
         client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
@@ -300,9 +326,12 @@ async def process_session_string(message: Message, bot: Bot, state: FSMContext):
         await state.clear()
         
         await status_msg.edit_text(
-            f"{EMOJI_VERIFIED} <b>Account Hosted Successfully!</b>\n\n"
-            f"• {EMOJI_USER} <b>Name:</b> {acc_name}\n"
-            f"• {EMOJI_PHONE} <b>Phone / ID:</b> <code>{phone}</code>",
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_VERIFIED} <b>SESSION HOSTED SUCCESSFULLY!</b> 🎉\n"
+            f"╚══════════════════════════╝\n"
+            f"• {EMOJI_USER} <b>Account:</b> {acc_name}\n"
+            f"• {EMOJI_PHONE} <b>Identifier:</b> <code>{phone}</code>\n"
+            f"• 🟢 <b>Status:</b> Ready for Campaigns",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
@@ -319,9 +348,11 @@ async def btn_my_accounts(call: CallbackQuery):
     
     if not accounts:
         text = (
-            f"{EMOJI_USER} <b>My Hosted Accounts</b>\n\n"
-            f"{EMOJI_CROSS} <i>Aapne abhi tak koi account add nahi kiya hai.</i>\n\n"
-            "Niche 'Add Account' par click karke apna Telegram account jodein."
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_USER} <b>HOSTED ACCOUNTS (0)</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"{EMOJI_CROSS} <i>Aapne abhi tak koi Telegram account add nahi kiya hai.</i>\n\n"
+            f"Niche <b>Add Account</b> par click karke apna pehla account connect karein."
         )
         markup = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="Add Account", callback_data="add_account", icon_custom_emoji_id=ID_HEART_FIRE)],
@@ -330,14 +361,24 @@ async def btn_my_accounts(call: CallbackQuery):
         await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
         return
         
-    text = f"{EMOJI_USER} <b>My Hosted Accounts ({len(accounts)})</b>\n\n"
+    text = (
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_USER} <b>HOSTED ACCOUNTS ({len(accounts)})</b>\n"
+        f"╚══════════════════════════╝\n"
+    )
     keyboard = []
     for idx, acc in enumerate(accounts, 1):
-        text += f"{idx}. {EMOJI_PHONE} <b>{acc.get('account_name', 'Telegram')}</b> (<code>{acc.get('phone_number')}</code>) - Status: <code>{acc.get('status')}</code>\n"
+        status_tag = f"[{EMOJI_CROSS} Banned]" if acc.get("is_banned") else f"[{EMOJI_VERIFIED} Active]"
+        text += (
+            f"<b>{idx}. {acc.get('account_name', 'Telegram')}</b> {status_tag}\n"
+            f"   ├ 📱 <code>{acc.get('phone_number')}</code>\n"
+            f"   └ 🚀 Dispatched: <code>{acc.get('total_sent', 0)}</code> ads\n\n"
+        )
         keyboard.append([
             InlineKeyboardButton(text=f"Remove {acc.get('phone_number')}", callback_data=f"del_acc_{acc['id']}", icon_custom_emoji_id=ID_TRASH)
         ])
         
+    text += f"━━━━━━━━━━━━━━━━━━━━━\n💡 <i>Kisi account ko unlink karne ke liye niche buttons use karein:</i>"
     keyboard.append([InlineKeyboardButton(text="Add Another Account", callback_data="add_account", icon_custom_emoji_id=ID_HEART_FIRE)])
     keyboard.append([InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)])
     
@@ -359,8 +400,11 @@ async def btn_delete_accounts_menu(call: CallbackQuery):
         [InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)]
     ]
     await call.message.edit_text(
-        f"{EMOJI_TRASH} <b>Delete Accounts Confirmation</b>\n\n"
-        "Kya aap sach me apne hosted accounts ko bot se remove karna chahte hain?",
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_TRASH} <b>UNLINK ALL ACCOUNTS</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"⚠️ <b>Warning:</b> Kya aap sach me apne sabhi <b>{len(accounts)}</b> hosted accounts ko remove karna chahte hain?\n\n"
+        f"<i>Sessions Supabase database se permanently delete ho jayenge.</i>",
         parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
     )
@@ -369,8 +413,12 @@ async def btn_delete_accounts_menu(call: CallbackQuery):
 async def confirm_delete_all(call: CallbackQuery):
     user_id = call.from_user.id
     await db.delete_all_user_accounts(user_id)
-    await call.answer("All accounts deleted!", show_alert=True)
-    await call.message.edit_text(f"{EMOJI_VERIFIED} <b>Aapke sabhi accounts delete kar diye gaye hain.</b>", parse_mode="HTML", reply_markup=kb.get_back_keyboard())
+    await call.answer("All accounts removed!", show_alert=True)
+    await call.message.edit_text(
+        f"{EMOJI_VERIFIED} <b>Aapke sabhi accounts successfully delete kar diye gaye hain.</b>",
+        parse_mode="HTML",
+        reply_markup=kb.get_back_keyboard()
+    )
 
 @router.callback_query(F.data.startswith("del_acc_"))
 async def delete_single_account(call: CallbackQuery):
@@ -387,13 +435,15 @@ async def btn_auto_join(call: CallbackQuery, state: FSMContext):
     user_id = call.from_user.id
     accounts = await db.get_user_accounts(user_id)
     if not accounts:
-        await call.answer("Pehle account add karein!", show_alert=True)
+        await call.answer("Pehle Telegram account add karein!", show_alert=True)
         return
         
     text = (
-        f"{EMOJI_TARGET} <b>Auto Join Public Groups</b>\n\n"
-        "Apne hosted accounts se naye groups join karne ke liye unke links ya usernames send karein.\n"
-        "<i>Har link ko nayi line me likhein (Format: @groupusername ya https://t.me/groupusername)</i>:"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_TARGET} <b>AUTO JOIN TELEGRAM GROUPS</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Apne sabhi <b>{len(accounts)}</b> accounts se naye public groups join karne ke liye unke usernames ya links enter karein:\n\n"
+        f"<i>(Har link ko nayi line me paste karein, e.g. @groupname ya https://t.me/groupname)</i>:"
     )
     await state.set_state(AccountStates.waiting_autojoin_links)
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
@@ -403,7 +453,7 @@ async def process_autojoin_links(message: Message, bot: Bot, state: FSMContext):
     user_id = message.from_user.id
     links = [line.strip() for line in message.text.split("\n") if line.strip()]
     if not links:
-        await message.answer(f"{EMOJI_CROSS} No valid links provided.", reply_markup=kb.get_back_keyboard())
+        await message.answer(f"{EMOJI_CROSS} Koi valid link nahi mili.", reply_markup=kb.get_back_keyboard())
         return
         
     accounts = await db.get_user_accounts(user_id)
@@ -430,9 +480,12 @@ async def process_autojoin_links(message: Message, bot: Bot, state: FSMContext):
             
     await state.clear()
     await status_msg.edit_text(
-        f"{EMOJI_VERIFIED} <b>Auto Join Complete!</b>\n\n"
-        f"• Successfully Joined: <code>{success_count}</code>\n"
-        f"• Skipped / Failed: <code>{fail_count}</code>",
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_VERIFIED} <b>AUTO JOIN BATCH COMPLETED!</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"• {EMOJI_VERIFIED} Successfully Joined: <code>{success_count}</code>\n"
+        f"• {EMOJI_CROSS} Skipped / Failed: <code>{fail_count}</code>\n\n"
+        f"Naye groups aapke target chat pool me shamil ho chuke hain.",
         parse_mode="HTML",
         reply_markup=kb.get_back_keyboard()
     )

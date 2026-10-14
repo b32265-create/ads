@@ -47,12 +47,19 @@ def format_interval(seconds: int) -> str:
         return f"{seconds // 60}m"
     return f"{seconds}s"
 
-def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict) -> str:
+def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict, user_info: dict = None) -> str:
+    user_info = user_info or {}
+    is_premium = user_info.get("is_premium", 0)
+    first_name = user_info.get("first_name", "User")
+    tier_badge = f"{EMOJI_DIAMOND} <b>VIP PRO</b>" if is_premium else f"{EMOJI_FLASH} <b>Standard Free</b>"
+    limit_note = "<i>(Unlimited ∞)</i>" if is_premium else "<i>(Max 5)</i>"
+
     ad_msg = settings.get("ad_message")
     ad_media = settings.get("ad_media_id")
+    media_type = settings.get("ad_media_type")
     if ad_msg or ad_media:
-        media_tag = f" {EMOJI_PIN}" if ad_media else ""
-        ad_status = f"{EMOJI_VERIFIED} Set{media_tag}"
+        type_str = f" [{media_type.upper()}]" if media_type else ""
+        ad_status = f"{EMOJI_VERIFIED} Set{type_str}"
     else:
         ad_status = f"{EMOJI_WARNING} Not Set"
 
@@ -69,28 +76,37 @@ def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict)
     cycles_done = settings.get("completed_cycles", 0)
 
     status = settings.get("status", "Paused")
-    status_display = f"{EMOJI_PAUSED} Paused" if status.lower() == "paused" else f"{EMOJI_RUNNING} Running"
+    if status.lower() == "running":
+        status_display = f"{EMOJI_RUNNING} <b>ACTIVE & BROADCASTING</b>"
+    else:
+        status_display = f"{EMOJI_PAUSED} <b>IDLE / PAUSED</b>"
 
-    # Schedule info
     sched_enabled = settings.get("schedule_enabled", 0)
     sched_start = settings.get("schedule_start") or "--:--"
     sched_end = settings.get("schedule_end") or "--:--"
     if sched_enabled:
-        sched_status = f"{EMOJI_MOON} {sched_start} → {sched_end}"
+        sched_status = f"{EMOJI_RUNNING} {sched_start} ➔ {sched_end}"
     else:
         sched_status = f"{EMOJI_PAUSED} OFF"
 
     return (
-        f"╰┈➤ {EMOJI_MSG} @{bot_username} DASHBOARD {EMOJI_FIRE}\n\n"
-        f"• {EMOJI_PLANE} Hosted Accounts: <b>{accounts_count}</b>\n"
-        f"• {EMOJI_MSG} Ad Message: <b>{ad_status}</b>\n"
-        f"• {EMOJI_INTERVAL} Cycle Interval: <b>{interval_display}</b>\n"
-        f"• {EMOJI_DELAY} Message Delay: <b>{delay}s</b>\n"
-        f"• {EMOJI_TARGET} Target: <b>{target}</b>\n"
-        f"• {EMOJI_MOON} Cycles: <b>{cycles_done}/{max_c_str}</b>\n"
-        f"• {EMOJI_PAUSED} Status: <b>{status_display}</b>\n"
-        f"• {EMOJI_CLOCK} Schedule: <b>{sched_status}</b>\n\n"
-        f"╰┈➤ Choose an action below:"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_FIRE} <b>SHADOW ADS AUTOMATION</b> 🐲\n"
+        f"╚══════════════════════════╝\n"
+        f"👤 <b>User:</b> {first_name} | {tier_badge}\n"
+        f"🤖 <b>Bot:</b> @{bot_username}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 <b>CAMPAIGN OVERVIEW & CONFIG</b>\n"
+        f"┌ {EMOJI_PLANE} <b>Hosted Accounts:</b> <code>{accounts_count}</code> {limit_note}\n"
+        f"├ {EMOJI_MSG} <b>Ad Content:</b> <b>{ad_status}</b>\n"
+        f"├ {EMOJI_TARGET} <b>Target Chats:</b> <code>{target}</code>\n"
+        f"├ {EMOJI_INTERVAL} <b>Cycle Interval:</b> <code>{interval_display}</code>\n"
+        f"├ {EMOJI_DELAY} <b>Message Delay:</b> <code>{delay}s</code>\n"
+        f"├ {EMOJI_MOON} <b>Progress Cycles:</b> <code>{cycles_done} / {max_c_str}</code>\n"
+        f"├ {EMOJI_CLOCK} <b>Schedule Window:</b> <code>{sched_status}</code>\n"
+        f"└ {status_display}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💡 <i>Niche diye gaye control panel se action select karein:</i>"
     )
 
 _CACHED_BOT_USERNAME: str = ""
@@ -103,15 +119,16 @@ async def get_bot_username(bot: Bot) -> str:
     return _CACHED_BOT_USERNAME
 
 async def show_dashboard(bot: Bot, chat_id: int, user_id: int, message_to_edit: Message = None):
-    """Utility to render and send/edit the exact dashboard with premium emojis."""
+    """Utility to render and send/edit the exact dashboard with premium styling."""
     bot_username = await get_bot_username(bot)
 
-    accounts_count, settings = await asyncio.gather(
+    accounts_count, settings, user_info = await asyncio.gather(
         db.get_account_count(user_id),
-        db.get_user_settings(user_id)
+        db.get_user_settings(user_id),
+        db.get_user_info(user_id)
     )
 
-    text = build_dashboard_text(bot_username, accounts_count, settings)
+    text = build_dashboard_text(bot_username, accounts_count, settings, user_info)
     markup = kb.get_dashboard_keyboard(
         msg_delay=settings.get("message_delay", 5),
         target=settings.get("target_type", "Groups"),
@@ -147,16 +164,22 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
 
     if user_info and user_info.get('is_banned', 0):
         await message.answer(
-            f"{EMOJI_CROSS} <b>You are banned from using this bot.</b>\n"
-            "Contact admin if you think this is a mistake.",
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_CROSS} <b>ACCOUNT SUSPENDED</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"Aapka account system dwara ban kar diya gaya hai.\n\n"
+            f"Contact admin if you think this is an error.",
             parse_mode="HTML"
         )
         return
 
     if not is_joined:
         await message.answer(
-            f"{EMOJI_WARNING} <b>Access Restricted!</b>\n\n"
-            "Bot ko use karne ke liye pehle niche diye gaye channels join karein:\n",
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_WARNING} <b>ACCESS RESTRICTED</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"Bot ko use karne ke liye pehle hamare official channels join karein:\n\n"
+            f"<i>Join karne ke baad 'Joined / Try Again' par click karein.</i>",
             parse_mode="HTML",
             reply_markup=kb.get_force_join_keyboard(unjoined)
         )
@@ -198,15 +221,21 @@ async def btn_set_ad_msg(call: CallbackQuery, state: FSMContext):
     settings = await db.get_user_settings(user_id)
     current_ad = settings.get("ad_message") or "None"
     has_media = bool(settings.get("ad_media_id"))
-    media_note = f"\n{EMOJI_PIN} <b>Current Media:</b> Set" if has_media else ""
+    media_note = f"\n📎 <b>Media Attached:</b> Yes" if has_media else ""
 
     text = (
-        f"{EMOJI_MSG} <b>Set Your Ad Message</b>\n\n"
-        f"{EMOJI_STAR} <b>Current Ad:</b>\n{current_ad}{media_note}\n\n"
-        f"{EMOJI_SPARKLE} <b>Naya Ad content send karein:</b>\n"
-        f"• {EMOJI_MSG} <b>Text only</b> - sirf text bhejo\n"
-        f"• {EMOJI_HEART_FIRE} <b>Photo/Video/Doc</b> - media bhejo (caption = ad text)\n"
-        f"• Caption optional hai, bina caption ke bhi chalega"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_MSG} <b>SET ADVERT CONTENT</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"{EMOJI_STAR} <b>Current Active Ad:</b>\n"
+        f"<blockquote>{current_ad}</blockquote>{media_note}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{EMOJI_SPARKLE} <b>Supported Ad Formats:</b>\n"
+        f"• {EMOJI_MSG} <b>Text Message:</b> Sirf text type karke bhejein\n"
+        f"• {EMOJI_HEART_FIRE} <b>Media (Photo/Video/Doc):</b> Media send karein (Caption = Ad text)\n"
+        f"• {EMOJI_PIN} Caption optional hai (Bina caption bhi chalega)\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 <i>Abhi apna naya ad content ya media yahan send karein:</i>"
     )
     await state.set_state(UserStates.waiting_ad_message)
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
@@ -235,7 +264,8 @@ async def process_ad_message(message: Message, bot: Bot, state: FSMContext):
 
     if not ad_text and not media_id:
         await message.answer(
-            f"{EMOJI_CROSS} Kuch bhi nahi mila! Text ya media (photo/video/doc) bhejo.",
+            f"{EMOJI_CROSS} <b>Kuch bhi receive nahi hua!</b>\nText ya media (photo/video/doc) bhejein.",
+            parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
         return
@@ -245,9 +275,10 @@ async def process_ad_message(message: Message, bot: Bot, state: FSMContext):
     await db.update_user_setting(user_id, "ad_media_type", media_type)
     await state.clear()
 
-    media_note = f"\n{EMOJI_PIN} <b>Media Type:</b> {media_type}" if media_id else ""
+    media_note = f"\n📎 <b>Media Format:</b> <code>{media_type.upper()}</code>" if media_id else ""
     await message.answer(
-        f"{EMOJI_VERIFIED} <b>Ad Message saved!</b>{media_note}",
+        f"{EMOJI_VERIFIED} <b>Ad Content Saved Successfully!</b>{media_note}\n\n"
+        f"Aap <b>Preview Ad</b> button se apna naya ad check kar sakte hain.",
         parse_mode="HTML"
     )
     await show_dashboard(bot, message.chat.id, user_id)
@@ -257,8 +288,13 @@ async def process_ad_message(message: Message, bot: Bot, state: FSMContext):
 async def btn_set_interval(call: CallbackQuery):
     await call.answer()
     text = (
-        f"{EMOJI_INTERVAL} <b>Set Cycle Interval</b>\n\n"
-        "Ek ad cycle complete hone ke baad agli cycle shuru hone ka time select karein:"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_INTERVAL} <b>CYCLE INTERVAL CONFIG</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Ek campaign cycle complete hone ke baad agli cycle shuru hone ka pause time select karein.\n\n"
+        f"💡 <i>Recommended: 5 ya 10 Minutes (FloodWait se bachne ke liye).</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 Niche pre-set ya custom intervals chunein:"
     )
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_interval_keyboard())
 
@@ -271,7 +307,14 @@ async def process_interval_choice(call: CallbackQuery, bot: Bot, state: FSMConte
         await call.answer()
         await state.set_state(UserStates.waiting_custom_interval)
         await call.message.edit_text(
-            f"{EMOJI_SPARKLE} <b>Enter custom interval in seconds:</b>\n(Example: <code>900</code> for 15 minutes)",
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_SPARKLE} <b>CUSTOM INTERVAL</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"Seconds me custom time enter karein:\n\n"
+            f"• <code>300</code> = 5 Minutes\n"
+            f"• <code>900</code> = 15 Minutes\n"
+            f"• <code>1800</code> = 30 Minutes\n\n"
+            f"👉 <i>Number send karein (Minimum 30s):</i>",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
@@ -288,11 +331,11 @@ async def process_custom_interval(message: Message, bot: Bot, state: FSMContext)
     try:
         seconds = int(message.text.strip())
         if seconds < 30:
-            await message.answer(f"{EMOJI_WARNING} Minimum interval is 30 seconds.", reply_markup=kb.get_back_keyboard())
+            await message.answer(f"{EMOJI_WARNING} Minimum interval 30 seconds hona chahiye.", reply_markup=kb.get_back_keyboard())
             return
         await db.update_user_setting(user_id, "cycle_interval", seconds)
         await state.clear()
-        await message.answer(f"{EMOJI_VERIFIED} Interval set to {format_interval(seconds)}!")
+        await message.answer(f"{EMOJI_VERIFIED} <b>Interval updated to {format_interval(seconds)}!</b>", parse_mode="HTML")
         await show_dashboard(bot, message.chat.id, user_id)
     except ValueError:
         await message.answer(f"{EMOJI_CROSS} Please enter a valid number of seconds.", reply_markup=kb.get_back_keyboard())
@@ -302,8 +345,15 @@ async def process_custom_interval(message: Message, bot: Bot, state: FSMContext)
 async def btn_set_delay(call: CallbackQuery):
     await call.answer()
     text = (
-        f"{EMOJI_DELAY} <b>Set Message Delay</b>\n\n"
-        "Har group me ad post karne ke beech kitna second ka gap rakhna hai taaki FloodWait na aaye:"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_DELAY} <b>MESSAGE DISPATCH DELAY</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Har chat me ad post karne ke beech kitna delay rakhna hai:\n\n"
+        f"• <b>2s:</b> ⚡ Fast (Established Accounts)\n"
+        f"• <b>5s:</b> 🥂 Optimal (Recommended standard)\n"
+        f"• <b>15s:</b> 🛡️ Extra Safe (Fresh/New accounts)\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 Niche delay select karein:"
     )
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_delay_keyboard())
 
@@ -316,7 +366,11 @@ async def process_delay_choice(call: CallbackQuery, bot: Bot, state: FSMContext)
         await call.answer()
         await state.set_state(UserStates.waiting_custom_delay)
         await call.message.edit_text(
-            f"{EMOJI_SPARKLE} <b>Enter message delay in seconds:</b>\n(e.g. <code>5</code>)",
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_SPARKLE} <b>CUSTOM DELAY</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"Messages ke beech seconds me gap enter karein:\n"
+            f"<i>(Example: <code>7</code> ya <code>12</code>)</i>",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
@@ -333,11 +387,11 @@ async def process_custom_delay(message: Message, bot: Bot, state: FSMContext):
     try:
         seconds = int(message.text.strip())
         if seconds < 1:
-            await message.answer(f"{EMOJI_WARNING} Minimum delay is 1 second.", reply_markup=kb.get_back_keyboard())
+            await message.answer(f"{EMOJI_WARNING} Minimum delay 1 second hona chahiye.", reply_markup=kb.get_back_keyboard())
             return
         await db.update_user_setting(user_id, "message_delay", seconds)
         await state.clear()
-        await message.answer(f"{EMOJI_VERIFIED} Delay set to {seconds}s!")
+        await message.answer(f"{EMOJI_VERIFIED} <b>Delay updated to {seconds}s!</b>", parse_mode="HTML")
         await show_dashboard(bot, message.chat.id, user_id)
     except ValueError:
         await message.answer(f"{EMOJI_CROSS} Please enter a valid number of seconds.", reply_markup=kb.get_back_keyboard())
@@ -360,8 +414,14 @@ async def btn_toggle_target(call: CallbackQuery, bot: Bot):
 async def btn_set_cycles(call: CallbackQuery):
     await call.answer()
     text = (
-        f"{EMOJI_MOON} <b>Set Ad Cycles</b>\n\n"
-        "Aap kitni cycles ad run karna chahte hain select karein:"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_MOON} <b>AD CAMPAIGN CYCLES</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Puri group list me ads kitni bar broadcast karni hai select karein:\n\n"
+        f"• <b>Unlimited (∞):</b> 24/7 continuous advertising\n"
+        f"• <b>Fixed Cycles:</b> Targeted amount complete hote hi auto-pause\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 Select cycle mode below:"
     )
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_cycles_keyboard())
 
@@ -374,7 +434,11 @@ async def process_cycles_choice(call: CallbackQuery, bot: Bot, state: FSMContext
         await call.answer()
         await state.set_state(UserStates.waiting_custom_cycles)
         await call.message.edit_text(
-            f"{EMOJI_SPARKLE} <b>Enter number of cycles:</b>\n(e.g. <code>25</code> or <code>0</code> for unlimited)",
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_SPARKLE} <b>CUSTOM CYCLES</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"Total cycles ka number enter karein:\n"
+            f"<i>(Example: <code>25</code> ya <code>0</code> for Unlimited)</i>",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
@@ -396,7 +460,7 @@ async def process_custom_cycles(message: Message, bot: Bot, state: FSMContext):
         await db.update_user_setting(user_id, "max_cycles", num)
         cycle_str = "Unlimited (∞)" if num == 0 else str(num)
         await state.clear()
-        await message.answer(f"{EMOJI_VERIFIED} Cycles set to {cycle_str}!")
+        await message.answer(f"{EMOJI_VERIFIED} <b>Cycles set to {cycle_str}!</b>", parse_mode="HTML")
         await show_dashboard(bot, message.chat.id, user_id)
     except ValueError:
         await message.answer(f"{EMOJI_CROSS} Please enter a valid number (0 or positive integer).", reply_markup=kb.get_back_keyboard())
@@ -410,10 +474,13 @@ async def btn_exclude_groups(call: CallbackQuery, state: FSMContext):
     excluded = settings.get("exclude_groups") or "None"
     
     text = (
-        f"{EMOJI_GIFT} <b>Exclude Groups</b>\n\n"
-        f"{EMOJI_WARNING} <b>Currently Excluded:</b>\n<code>{excluded}</code>\n\n"
-        "Jin groups me ads post nahi karni, unke usernames ya IDs comma se separate karke send karein:\n"
-        "<i>(Example: @group1, @group2, -100123456789)</i>"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_GIFT} <b>EXCLUDE SPECIFIC CHATS</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"🚫 <b>Currently Blacklisted:</b>\n"
+        f"<blockquote>{excluded}</blockquote>\n\n"
+        f"Jin chats me ads post nahi karni, unke usernames ya IDs comma se separate karke send karein:\n"
+        f"<i>(Example: @spamchat, @alerts, -100123456789)</i>"
     )
     await state.set_state(UserStates.waiting_exclude_groups)
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
@@ -424,7 +491,7 @@ async def process_exclude_groups(message: Message, bot: Bot, state: FSMContext):
     ex_text = message.text.strip()
     await db.update_user_setting(user_id, "exclude_groups", ex_text)
     await state.clear()
-    await message.answer(f"{EMOJI_VERIFIED} <b>Excluded groups list updated!</b>", parse_mode="HTML")
+    await message.answer(f"{EMOJI_VERIFIED} <b>Excluded chats blacklist updated!</b>", parse_mode="HTML")
     await show_dashboard(bot, message.chat.id, user_id)
 
 # --- PREVIEW AD ---
@@ -442,10 +509,18 @@ async def btn_preview_ad(call: CallbackQuery, bot: Bot):
 
     await call.answer()
     back_kb = kb.get_back_keyboard()
-    header = f"{EMOJI_SPARKLE} <b>AD PREVIEW</b>\n────────────────────\n"
+    header = (
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_SPARKLE} <b>LIVE ADVERT PREVIEW</b> ✨\n"
+        f"╚══════════════════════════╝\n"
+    )
+    footer = (
+        f"\n━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📌 <i>Yeh advert aapke sabhi connected accounts se target chats me bheja jayega.</i>"
+    )
 
     if media_id:
-        caption = f"{header}{ad_text}" if ad_text else f"{header}<i>(No caption)</i>"
+        caption = f"{header}{ad_text}{footer}" if ad_text else f"{header}<i>(No caption)</i>{footer}"
         try:
             if media_type == "photo":
                 await bot.send_photo(call.message.chat.id, photo=media_id, caption=caption, parse_mode="HTML", reply_markup=back_kb)
@@ -456,7 +531,7 @@ async def btn_preview_ad(call: CallbackQuery, bot: Bot):
             elif media_type == "document":
                 await bot.send_document(call.message.chat.id, document=media_id, caption=caption, parse_mode="HTML", reply_markup=back_kb)
             else:
-                await bot.send_message(call.message.chat.id, f"{header}{ad_text}", parse_mode="HTML", reply_markup=back_kb)
+                await bot.send_message(call.message.chat.id, f"{header}{ad_text}{footer}", parse_mode="HTML", reply_markup=back_kb)
             
             try:
                 await call.message.delete()
@@ -464,11 +539,11 @@ async def btn_preview_ad(call: CallbackQuery, bot: Bot):
                 pass
             return
         except Exception as e:
-            await call.message.edit_text(f"{header}{ad_text}\n\n{EMOJI_WARNING} <i>(Media preview error: {e})</i>", parse_mode="HTML", reply_markup=back_kb)
+            await call.message.edit_text(f"{header}{ad_text}\n\n{EMOJI_WARNING} <i>(Media preview error: {e})</i>{footer}", parse_mode="HTML", reply_markup=back_kb)
             return
 
     # Text only ad
-    preview_content = f"{header}{ad_text}"
+    preview_content = f"{header}<blockquote>{ad_text}</blockquote>{footer}"
     await call.message.edit_text(preview_content, parse_mode="HTML", reply_markup=back_kb)
 
 # --- ANALYTICS ---
@@ -481,25 +556,38 @@ async def btn_analytics(call: CallbackQuery):
         db.get_user_accounts_all(user_id)
     )
 
+    total_sent = data.get('total_sent', 0)
+    total_failed = data.get('total_failed', 0)
+    success_rate = "100"
+    if (total_sent + total_failed) > 0:
+        success_rate = f"{(total_sent / (total_sent + total_failed) * 100):.1f}"
+
     text = (
-        f"{EMOJI_STATS} <b>CAMPAIGN ANALYTICS</b> {EMOJI_FIRE}\n\n"
-        f"• {EMOJI_PLANE} <b>Total Accounts:</b> <code>{len(accounts)}</code>\n"
-        f"• {EMOJI_ROCKET} <b>Total Ads Sent:</b> <code>{data.get('total_sent', 0)}</code>\n"
-        f"• {EMOJI_WARNING} <b>Failed / Skipped:</b> <code>{data.get('total_failed', 0)}</code>\n"
-        f"• {EMOJI_CLOCK} <b>Last Active:</b> <code>{data.get('last_sent_at', 'Never')}</code>\n"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_STATS} <b>CAMPAIGN ANALYTICS</b> {EMOJI_FIRE}\n"
+        f"╚══════════════════════════╝\n"
+        f"📈 <b>Lifetime Ads Dispatched:</b> <code>{total_sent:,}</code>\n"
+        f"⚠️ <b>Failed / Skipped:</b> <code>{total_failed:,}</code>\n"
+        f"🎯 <b>Delivery Success Rate:</b> <code>{success_rate}%</code>\n"
+        f"🕒 <b>Last Active:</b> <code>{data.get('last_sent_at', 'Never')}</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{EMOJI_PHONE} <b>HOSTED ACCOUNTS BREAKDOWN ({len(accounts)})</b>\n"
     )
 
     if accounts:
-        text += f"\n{EMOJI_PHONE} <b>Per Account Stats:</b>\n"
-        for acc in accounts:
-            ban_tag = f" {EMOJI_CROSS}" if acc.get("is_banned") else ""
+        for idx, acc in enumerate(accounts, 1):
+            ban_tag = f" [{EMOJI_CROSS} BANNED]" if acc.get("is_banned") else f" [{EMOJI_VERIFIED} ACTIVE]"
             text += (
-                f"• <b>{acc.get('account_name', 'N/A')}</b>{ban_tag} — "
-                f"Sent: <code>{acc.get('total_sent', 0)}</code> | "
-                f"Failed: <code>{acc.get('total_failed', 0)}</code>\n"
+                f"{idx}. <b>{acc.get('account_name', 'Telegram')}</b> {ban_tag}\n"
+                f"   └ 🚀 Sent: <code>{acc.get('total_sent', 0)}</code> | ⚠️ Failed: <code>{acc.get('total_failed', 0)}</code>\n"
             )
+    else:
+        text += f"<i>Koi account connected nahi hai.</i>\n"
 
-    text += f"\n{EMOJI_SPARKLE} <i>All metrics updated in real-time.</i>"
+    text += (
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{EMOJI_SPARKLE} <i>All metrics updated in real-time via Supabase PostgreSQL.</i>"
+    )
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
 
 # --- SCHEDULE ADS ---
@@ -512,15 +600,18 @@ async def btn_schedule_ads(call: CallbackQuery):
     sched_enabled = settings.get("schedule_enabled", 0)
     sched_start = settings.get("schedule_start") or "Not Set"
     sched_end = settings.get("schedule_end") or "Not Set"
-    status_str = f"{EMOJI_RUNNING} Enabled" if sched_enabled else f"{EMOJI_PAUSED} Disabled"
+    status_str = f"{EMOJI_RUNNING} <b>ENABLED</b>" if sched_enabled else f"{EMOJI_PAUSED} <b>DISABLED</b>"
 
     text = (
-        f"{EMOJI_CLOCK} <b>Schedule Ads</b>\n\n"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_CLOCK} <b>SCHEDULED BROADCASTS</b>\n"
+        f"╚══════════════════════════╝\n"
         f"• <b>Status:</b> {status_str}\n"
-        f"• <b>Start Time:</b> <code>{sched_start}</code>\n"
-        f"• <b>End Time:</b> <code>{sched_end}</code>\n\n"
-        "<i>Set karo ki ads kab se kab tak chalein (24-hour format, e.g. 09:00 to 22:00)\n"
-        "Overnight bhi support hai (e.g. 22:00 to 06:00)</i>"
+        f"• <b>Active Window:</b> <code>{sched_start}</code> ➔ <code>{sched_end}</code>\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💡 <b>Automated Scheduler:</b>\n"
+        f"Schedule enable karne par ads sirf is specified time window me hi run hongi.\n"
+        f"<i>(Overnight bhi fully supported hai, e.g. 22:00 to 07:00)</i>"
     )
     markup = kb.get_schedule_keyboard(sched_enabled)
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
@@ -541,9 +632,11 @@ async def schedule_set_start(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await state.set_state(UserStates.waiting_schedule_start)
     await call.message.edit_text(
-        f"{EMOJI_CLOCK} <b>Set Schedule Start Time</b>\n\n"
-        "Ads kab se shuru hon? Time enter karein:\n"
-        "<i>(24-hour format, e.g. <code>09:00</code> or <code>22:30</code>)</i>",
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_CLOCK} <b>SET SCHEDULE START TIME</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Ads kab se broadcast hona shuru hon? Time enter karein:\n\n"
+        f"<i>(24-hour format, e.g. <code>09:00</code> ya <code>22:30</code>)</i>",
         parse_mode="HTML",
         reply_markup=kb.get_back_keyboard()
     )
@@ -560,14 +653,14 @@ async def process_schedule_start(message: Message, state: FSMContext):
         clean_time = f"{h:02d}:{m:02d}"
     except Exception:
         await message.answer(
-            f"{EMOJI_CROSS} Invalid format! <code>HH:MM</code> format mein enter karein (e.g. <code>09:00</code>)",
+            f"{EMOJI_CROSS} Invalid format! <code>HH:MM</code> format me enter karein (e.g. <code>09:00</code>)",
             parse_mode="HTML"
         )
         return
 
     await db.update_user_setting(user_id, "schedule_start", clean_time)
     await state.clear()
-    await message.answer(f"{EMOJI_VERIFIED} <b>Start Time set to {clean_time}</b>", parse_mode="HTML")
+    await message.answer(f"{EMOJI_VERIFIED} <b>Start Time updated to {clean_time}</b>", parse_mode="HTML")
     await show_dashboard(bot=message.bot, chat_id=message.chat.id, user_id=user_id)
 
 @router.callback_query(F.data == "schedule_set_end")
@@ -575,9 +668,11 @@ async def schedule_set_end(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await state.set_state(UserStates.waiting_schedule_end)
     await call.message.edit_text(
-        f"{EMOJI_CLOCK} <b>Set Schedule End Time</b>\n\n"
-        "Ads kab band hon? Time enter karein:\n"
-        "<i>(24-hour format, e.g. <code>22:00</code> or <code>06:00</code>)</i>",
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_CLOCK} <b>SET SCHEDULE END TIME</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Ads kab pause/stop hon? Time enter karein:\n\n"
+        f"<i>(24-hour format, e.g. <code>22:00</code> ya <code>06:00</code>)</i>",
         parse_mode="HTML",
         reply_markup=kb.get_back_keyboard()
     )
@@ -594,14 +689,14 @@ async def process_schedule_end(message: Message, state: FSMContext):
         clean_time = f"{h:02d}:{m:02d}"
     except Exception:
         await message.answer(
-            f"{EMOJI_CROSS} Invalid format! <code>HH:MM</code> format mein enter karein (e.g. <code>22:00</code>)",
+            f"{EMOJI_CROSS} Invalid format! <code>HH:MM</code> format me enter karein (e.g. <code>22:00</code>)",
             parse_mode="HTML"
         )
         return
 
     await db.update_user_setting(user_id, "schedule_end", clean_time)
     await state.clear()
-    await message.answer(f"{EMOJI_VERIFIED} <b>End Time set to {clean_time}</b>", parse_mode="HTML")
+    await message.answer(f"{EMOJI_VERIFIED} <b>End Time updated to {clean_time}</b>", parse_mode="HTML")
     await show_dashboard(bot=message.bot, chat_id=message.chat.id, user_id=user_id)
 
 # --- PREMIUM ---
@@ -609,13 +704,26 @@ async def process_schedule_end(message: Message, state: FSMContext):
 async def btn_premium(call: CallbackQuery):
     await call.answer()
     text = (
-        f"{EMOJI_FLASH} <b>SHADOW ADS PREMIUM</b> {EMOJI_DIAMOND}\n\n"
-        "Upgrade to Premium for exclusive marketing power:\n\n"
-        f"• {EMOJI_VERIFIED} <b>Unlimited Hosted Accounts</b>\n"
-        f"• {EMOJI_FLASH} <b>Fast 2s Anti-ban message delay</b>\n"
-        f"• {EMOJI_SPARKLE} <b>Smart Account Rotation</b>\n"
-        f"• {EMOJI_TARGET} <b>Auto Joiner & Group Targeting</b>\n"
-        f"• {EMOJI_ROCKET} <b>24/7 Dedicated Cloud Runner</b>\n\n"
-        f"{EMOJI_MSG} Contact Admin for upgrades & pricing!"
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_DIAMOND} <b>SHADOW VIP MEMBERSHIP</b> {EMOJI_ROCKET}\n"
+        f"╚══════════════════════════╝\n"
+        f"Automate your telegram marketing at scale with VIP power:\n\n"
+        f"⚡ <b>Unlimited Hosted Accounts</b>\n"
+        f"   └ <i>Host 10, 50, ya 100+ accounts bina kisi limit ke</i>\n\n"
+        f"🛡️ <b>Anti-Ban Matrix & Rotation</b>\n"
+        f"   └ <i>Smart account switching & FloodWait evasion</i>\n\n"
+        f"🚀 <b>Ultra-Fast 2s Message Delay</b>\n"
+        f"   └ <i>Turbocharged broadcast speed across target chats</i>\n\n"
+        f"🌐 <b>Auto-Joiner & Group Targeting</b>\n"
+        f"   └ <i>Accounts se automatically public groups join karein</i>\n\n"
+        f"👑 <b>Priority 24/7 Cloud Engine</b>\n"
+        f"   └ <i>Dedicated high-speed background worker pipeline</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{EMOJI_MONEY} <b>PRICING TIERS:</b>\n"
+        f"• <b>1 Month Pass:</b> <code>₹199 / $2.50</code>\n"
+        f"• <b>Lifetime Access:</b> <code>₹499 / $6.00</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💬 <b>Instant VIP Activation Ke Liye Contact Karein:</b>\n"
+        f"👉 <b>Admin:</b> @ALL_SHADOWS_BOT"
     )
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
