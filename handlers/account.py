@@ -1,0 +1,424 @@
+import logging
+import asyncio
+from aiogram import Router, F, Bot
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+import telethon
+from telethon import TelegramClient, functions
+from telethon.sessions import StringSession
+from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PasswordHashInvalidError
+
+import database as db
+import keyboards as kb
+from config import API_ID, API_HASH
+
+logger = logging.getLogger(__name__)
+
+router = Router(name="account_router")
+
+# Temporary in-memory cache for active login attempts: user_id -> dict
+login_sessions = {}
+
+class AccountStates(StatesGroup):
+    waiting_phone = State()
+    waiting_otp = State()
+    waiting_2fa = State()
+    waiting_session = State()
+    waiting_autojoin_links = State()
+
+async def check_account_limit(user_id: int):
+    """Returns (can_add: bool, current_count: int, limit: int)"""
+    user_info, acc_count, max_accs = await asyncio.gather(
+        db.get_user_info(user_id),
+        db.get_account_count(user_id),
+        db.get_bot_setting("max_accounts_per_user", "5")
+    )
+    is_premium = user_info.get("is_premium", 0) if user_info else 0
+    try:
+        limit = int(max_accs)
+    except (ValueError, TypeError):
+        limit = 5
+    if not is_premium and acc_count >= limit:
+        return False, acc_count, limit
+    return True, acc_count, limit
+
+# --- ADD ACCOUNT MENU ---
+@router.callback_query(F.data == "add_account")
+async def btn_add_account(call: CallbackQuery):
+    user_id = call.from_user.id
+    can_add, current_count, limit = await check_account_limit(user_id)
+    if not can_add:
+        await call.answer("⚠️ Limit Reached!", show_alert=True)
+        limit_text = (
+            "⚠️ <b>Account Limit Reached!</b>\n\n"
+            f"Free users maximum <b>{limit}</b> accounts host kar sakte hain.\n"
+            f"Aapke account me already <b>{current_count}</b> accounts added hain.\n\n"
+            "🚀 Unlimited accounts host karne ke liye <b>Premium</b> me upgrade karein!"
+        )
+        prem_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💎 Upgrade to Premium", callback_data="premium")],
+            [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
+        ])
+        await call.message.edit_text(limit_text, parse_mode="HTML", reply_markup=prem_kb)
+        return
+
+    await call.answer()
+    text = (
+        "❤️‍🔥 <b>Add Telegram Account</b>\n\n"
+        "Apna Telegram account host karne ke liye ek method chunein:\n\n"
+        "1️⃣ <b>Phone Number (OTP):</b> Bot seedha aapke number par Telegram OTP bhejega.\n"
+        "2️⃣ <b>String Session:</b> Agar aapke paas pehle se Telethon String Session hai to yahan paste karein."
+    )
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_add_account_keyboard())
+
+# --- PHONE LOGIN FLOW ---
+@router.callback_query(F.data == "login_phone")
+async def start_phone_login(call: CallbackQuery, state: FSMContext):
+    user_id = call.from_user.id
+    can_add, current_count, limit = await check_account_limit(user_id)
+    if not can_add:
+        await call.answer(f"⚠️ Limit reached! Free plan: max {limit} accounts.", show_alert=True)
+        return
+
+    await call.answer()
+    await state.set_state(AccountStates.waiting_phone)
+    text = (
+        "📱 <b>Enter Phone Number</b>\n\n"
+        "Apna Telegram phone number country code ke sath enter karein:\n"
+        "<i>(Example: +919876543210 ya +1234567890)</i>"
+    )
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
+
+@router.message(AccountStates.waiting_phone)
+async def process_phone_input(message: Message, bot: Bot, state: FSMContext):
+    user_id = message.from_user.id
+    can_add, current_count, limit = await check_account_limit(user_id)
+    if not can_add:
+        await state.clear()
+        await message.answer(
+            f"⚠️ <b>Account limit reached!</b> Free users max {limit} accounts add kar sakte hain.",
+            parse_mode="HTML",
+            reply_markup=kb.get_back_keyboard()
+        )
+        return
+
+    phone = message.text.strip().replace(" ", "").replace("-", "")
+    if not phone.startswith("+"):
+        phone = "+" + phone
+        
+    status_msg = await message.answer("🔄 <i>Connecting to Telegram & requesting OTP...</i>", parse_mode="HTML")
+    
+    try:
+        client = TelegramClient(StringSession(), API_ID, API_HASH)
+        await client.connect()
+        send_code = await client.send_code_request(phone)
+        
+        login_sessions[user_id] = {
+            "client": client,
+            "phone": phone,
+            "phone_code_hash": send_code.phone_code_hash
+        }
+        
+        await state.set_state(AccountStates.waiting_otp)
+        await status_msg.edit_text(
+            f"📩 <b>OTP Sent to {phone}!</b>\n\n"
+            "Apne Telegram app me aaya hua login code enter karein.\n"
+            "<i>(Tip: Aap digits ke beech space de kar bhi bhej sakte hain, e.g. 1 2 3 4 5)</i>",
+            parse_mode="HTML",
+            reply_markup=kb.get_back_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"Error requesting code for {phone}: {e}")
+        await status_msg.edit_text(
+            f"❌ <b>Failed to send OTP:</b>\n<code>{e}</code>\n\nPlease check the number and try again.",
+            parse_mode="HTML",
+            reply_markup=kb.get_back_keyboard()
+        )
+        await state.clear()
+
+@router.message(AccountStates.waiting_otp)
+async def process_otp_input(message: Message, bot: Bot, state: FSMContext):
+    user_id = message.from_user.id
+    code = message.text.strip().replace(" ", "").replace("-", "")
+    
+    session_data = login_sessions.get(user_id)
+    if not session_data:
+        await message.answer("⚠️ Session expired. Please start login again.", reply_markup=kb.get_back_keyboard())
+        await state.clear()
+        return
+
+    client: TelegramClient = session_data["client"]
+    phone = session_data["phone"]
+    phone_code_hash = session_data["phone_code_hash"]
+    
+    status_msg = await message.answer("🔄 <i>Verifying code...</i>", parse_mode="HTML")
+    
+    try:
+        await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
+        # Login success without 2FA
+        session_str = client.session.save()
+        me = await client.get_me()
+        acc_name = me.first_name or phone
+        
+        await db.add_account(user_id, phone, session_str, acc_name)
+        await client.disconnect()
+        login_sessions.pop(user_id, None)
+        await state.clear()
+        
+        await status_msg.edit_text(
+            f"🎉 <b>Account Added Successfully!</b>\n\n"
+            f"👤 <b>Name:</b> {acc_name}\n"
+            f"📱 <b>Phone:</b> <code>{phone}</code>\n"
+            f"✅ Ab yeh account aapke ads post karne ke liye ready hai!",
+            parse_mode="HTML",
+            reply_markup=kb.get_back_keyboard()
+        )
+    except SessionPasswordNeededError:
+        # Requires 2FA
+        await state.set_state(AccountStates.waiting_2fa)
+        await status_msg.edit_text(
+            "🔐 <b>Two-Step Verification (2FA) Required!</b>\n\n"
+            "Is account par 2FA password laga hua hai. Kripya apna 2FA password enter karein:",
+            parse_mode="HTML",
+            reply_markup=kb.get_back_keyboard()
+        )
+    except PhoneCodeInvalidError:
+        await status_msg.edit_text("❌ <b>Invalid Code!</b> Kripya sahi OTP dobara enter karein:", parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Error signing in: {e}")
+        await status_msg.edit_text(f"❌ <b>Login Failed:</b> <code>{e}</code>", parse_mode="HTML", reply_markup=kb.get_back_keyboard())
+        await client.disconnect()
+        login_sessions.pop(user_id, None)
+        await state.clear()
+
+@router.message(AccountStates.waiting_2fa)
+async def process_2fa_input(message: Message, bot: Bot, state: FSMContext):
+    user_id = message.from_user.id
+    password = message.text.strip()
+    
+    session_data = login_sessions.get(user_id)
+    if not session_data:
+        await message.answer("⚠️ Session expired. Please start login again.", reply_markup=kb.get_back_keyboard())
+        await state.clear()
+        return
+
+    client: TelegramClient = session_data["client"]
+    phone = session_data["phone"]
+    status_msg = await message.answer("🔄 <i>Verifying 2FA password...</i>", parse_mode="HTML")
+    
+    try:
+        await client.sign_in(password=password)
+        session_str = client.session.save()
+        me = await client.get_me()
+        acc_name = me.first_name or phone
+        
+        await db.add_account(user_id, phone, session_str, acc_name)
+        await client.disconnect()
+        login_sessions.pop(user_id, None)
+        await state.clear()
+        
+        await status_msg.edit_text(
+            f"🎉 <b>Account Added Successfully!</b>\n\n"
+            f"👤 <b>Name:</b> {acc_name}\n"
+            f"📱 <b>Phone:</b> <code>{phone}</code>\n"
+            f"✅ Account successfully hosted!",
+            parse_mode="HTML",
+            reply_markup=kb.get_back_keyboard()
+        )
+    except PasswordHashInvalidError:
+        await status_msg.edit_text("❌ <b>Incorrect 2FA password!</b> Dobara try karein:", parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"2FA Error: {e}")
+        await status_msg.edit_text(f"❌ <b>Login Failed:</b> <code>{e}</code>", parse_mode="HTML", reply_markup=kb.get_back_keyboard())
+        await client.disconnect()
+        login_sessions.pop(user_id, None)
+        await state.clear()
+
+# --- STRING SESSION FLOW ---
+@router.callback_query(F.data == "login_session")
+async def start_session_login(call: CallbackQuery, state: FSMContext):
+    user_id = call.from_user.id
+    can_add, current_count, limit = await check_account_limit(user_id)
+    if not can_add:
+        await call.answer(f"⚠️ Limit reached! Free plan: max {limit} accounts.", show_alert=True)
+        return
+
+    await call.answer()
+    await state.set_state(AccountStates.waiting_session)
+    text = (
+        "🔑 <b>Submit String Session</b>\n\n"
+        "Apna Telethon String Session yahan paste karein:"
+    )
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
+
+@router.message(AccountStates.waiting_session)
+async def process_session_string(message: Message, bot: Bot, state: FSMContext):
+    user_id = message.from_user.id
+    can_add, current_count, limit = await check_account_limit(user_id)
+    if not can_add:
+        await state.clear()
+        await message.answer(
+            f"⚠️ <b>Account limit reached!</b> Free users max {limit} accounts add kar sakte hain.",
+            parse_mode="HTML",
+            reply_markup=kb.get_back_keyboard()
+        )
+        return
+
+    session_str = message.text.strip()
+    status_msg = await message.answer("🔄 <i>Validating string session...</i>", parse_mode="HTML")
+    
+    try:
+        client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+        await client.connect()
+        if not await client.is_user_authorized():
+            await status_msg.edit_text("❌ <b>Invalid or expired String Session!</b>", parse_mode="HTML", reply_markup=kb.get_back_keyboard())
+            await client.disconnect()
+            return
+            
+        me = await client.get_me()
+        phone = me.phone or f"ID_{me.id}"
+        acc_name = me.first_name or phone
+        
+        await db.add_account(user_id, phone, session_str, acc_name)
+        await client.disconnect()
+        await state.clear()
+        
+        await status_msg.edit_text(
+            f"🎉 <b>Account Hosted Successfully!</b>\n\n"
+            f"👤 <b>Name:</b> {acc_name}\n"
+            f"📱 <b>Phone / ID:</b> <code>{phone}</code>",
+            parse_mode="HTML",
+            reply_markup=kb.get_back_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"Session error: {e}")
+        await status_msg.edit_text(f"❌ <b>Error:</b> <code>{e}</code>", parse_mode="HTML", reply_markup=kb.get_back_keyboard())
+
+# --- MY ACCOUNTS LIST ---
+@router.callback_query(F.data == "my_accounts")
+async def btn_my_accounts(call: CallbackQuery):
+    await call.answer()
+    user_id = call.from_user.id
+    accounts = await db.get_user_accounts(user_id)
+    
+    if not accounts:
+        text = (
+            "🍧 <b>My Hosted Accounts</b>\n\n"
+            "❌ <i>Aapne abhi tak koi account add nahi kiya hai.</i>\n\n"
+            "Niche 'Add Account' par click karke apna Telegram account jodein."
+        )
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❤️‍🔥 Add Account", callback_data="add_account")],
+            [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
+        ])
+        await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+        return
+        
+    text = f"🍧 <b>My Hosted Accounts ({len(accounts)})</b>\n\n"
+    keyboard = []
+    for idx, acc in enumerate(accounts, 1):
+        text += f"{idx}. 📱 <b>{acc.get('account_name', 'Telegram')}</b> (<code>{acc.get('phone_number')}</code>) - Status: <code>{acc.get('status')}</code>\n"
+        keyboard.append([
+            InlineKeyboardButton(text=f"🗑️ Remove {acc.get('phone_number')}", callback_data=f"del_acc_{acc['id']}")
+        ])
+        
+    keyboard.append([InlineKeyboardButton(text="❤️‍🔥 Add Another Account", callback_data="add_account")])
+    keyboard.append([InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")])
+    
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+
+# --- DELETE ACCOUNTS ---
+@router.callback_query(F.data == "delete_accounts")
+async def btn_delete_accounts_menu(call: CallbackQuery):
+    await call.answer()
+    user_id = call.from_user.id
+    accounts = await db.get_user_accounts(user_id)
+    
+    if not accounts:
+        await call.answer("Aapke paas koi account nahi hai!", show_alert=True)
+        return
+        
+    keyboard = [
+        [InlineKeyboardButton(text="⚠️ Delete ALL My Accounts", callback_data="confirm_delete_all_accs")],
+        [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
+    ]
+    await call.message.edit_text(
+        "🪓 <b>Delete Accounts Confirmation</b>\n\n"
+        "Kya aap sach me apne hosted accounts ko bot se remove karna chahte hain?",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+    )
+
+@router.callback_query(F.data == "confirm_delete_all_accs")
+async def confirm_delete_all(call: CallbackQuery):
+    user_id = call.from_user.id
+    await db.delete_all_user_accounts(user_id)
+    await call.answer("✅ All accounts deleted!", show_alert=True)
+    await call.message.edit_text("✅ <b>Aapke sabhi accounts delete kar diye gaye hain.</b>", parse_mode="HTML", reply_markup=kb.get_back_keyboard())
+
+@router.callback_query(F.data.startswith("del_acc_"))
+async def delete_single_account(call: CallbackQuery):
+    acc_id = int(call.data.replace("del_acc_", ""))
+    user_id = call.from_user.id
+    await db.delete_account_by_id(acc_id, user_id)
+    await call.answer("✅ Account removed!")
+    await btn_my_accounts(call)
+
+# --- AUTO JOIN GROUPS ---
+@router.callback_query(F.data == "auto_join_groups")
+async def btn_auto_join(call: CallbackQuery, state: FSMContext):
+    await call.answer()
+    user_id = call.from_user.id
+    accounts = await db.get_user_accounts(user_id)
+    if not accounts:
+        await call.answer("⚠️ Pehle account add karein!", show_alert=True)
+        return
+        
+    text = (
+        "🌐 <b>Auto Join Public Groups</b>\n\n"
+        "Apne hosted accounts se naye groups join karne ke liye unke links ya usernames send karein.\n"
+        "<i>Har link ko nayi line me likhein (Format: @groupusername ya https://t.me/groupusername)</i>:"
+    )
+    await state.set_state(AccountStates.waiting_autojoin_links)
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
+
+@router.message(AccountStates.waiting_autojoin_links)
+async def process_autojoin_links(message: Message, bot: Bot, state: FSMContext):
+    user_id = message.from_user.id
+    links = [line.strip() for line in message.text.split("\n") if line.strip()]
+    if not links:
+        await message.answer("❌ No valid links provided.", reply_markup=kb.get_back_keyboard())
+        return
+        
+    accounts = await db.get_user_accounts(user_id)
+    status_msg = await message.answer(f"⏳ <i>Joining {len(links)} groups across {len(accounts)} accounts...</i>", parse_mode="HTML")
+    
+    success_count = 0
+    fail_count = 0
+    
+    for acc in accounts:
+        try:
+            client = TelegramClient(StringSession(acc["session_string"]), API_ID, API_HASH)
+            await client.connect()
+            for link in links:
+                try:
+                    clean_target = link.replace("https://t.me/", "").replace("@", "").strip()
+                    await client(telethon.functions.channels.JoinChannelRequest(channel=clean_target))
+                    success_count += 1
+                    await asyncio.sleep(2)
+                except Exception:
+                    fail_count += 1
+            await client.disconnect()
+        except Exception:
+            pass
+            
+    await state.clear()
+    await status_msg.edit_text(
+        f"✅ <b>Auto Join Complete!</b>\n\n"
+        f"• Successfully Joined: <code>{success_count}</code>\n"
+        f"• Skipped / Failed: <code>{fail_count}</code>",
+        parse_mode="HTML",
+        reply_markup=kb.get_back_keyboard()
+    )
