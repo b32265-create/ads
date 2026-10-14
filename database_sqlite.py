@@ -569,9 +569,20 @@ async def set_user_forward_account(user_id: int, forward_acc: str):
         await db.execute("UPDATE user_settings SET forward_account = ? WHERE user_id = ?", (clean or None, user_id))
         await db.commit()
 
+_cache_sqlite_sys_acc = {}
+_cache_sqlite_user_msg = {}
+
 # --- SYSTEM ACCOUNTS (LOG & MANAGER USERBOT LOGIN) ---
 async def set_system_account(role: str, session_string: str, phone_number: str, account_name: str, username: str, tg_id: int):
     clean_user = (username or "").replace("@", "").strip()
+    _cache_sqlite_sys_acc[role] = {
+        "role": role,
+        "session_string": session_string,
+        "phone_number": phone_number,
+        "account_name": account_name,
+        "username": clean_user,
+        "tg_id": tg_id
+    }
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
             INSERT INTO system_accounts (role, session_string, phone_number, account_name, username, tg_id)
@@ -587,19 +598,31 @@ async def set_system_account(role: str, session_string: str, phone_number: str, 
         await db.commit()
 
 async def get_system_account(role: str):
+    if role in _cache_sqlite_sys_acc:
+        return _cache_sqlite_sys_acc[role]
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM system_accounts WHERE role = ?", (role,)) as cur:
             row = await cur.fetchone()
-            return dict(row) if row else None
+            res = dict(row) if row else None
+            if res:
+                _cache_sqlite_sys_acc[role] = res
+            return res
 
 async def clear_system_account(role: str):
+    _cache_sqlite_sys_acc.pop(role, None)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM system_accounts WHERE role = ?", (role,))
         await db.commit()
 
 # --- MANDATORY USER MESSAGE VERIFICATION ---
 async def mark_user_messaged_account(user_id: int, acc_type: str):
+    has_l, has_m = _cache_sqlite_user_msg.get(user_id, (False, False))
+    if acc_type.lower() == "log":
+        _cache_sqlite_user_msg[user_id] = (True, has_m)
+    else:
+        _cache_sqlite_user_msg[user_id] = (has_l, True)
+
     col = "messaged_log" if acc_type.lower() == "log" else "messaged_manager"
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(f"""
@@ -612,13 +635,15 @@ async def mark_user_messaged_account(user_id: int, acc_type: str):
         await db.commit()
 
 async def has_user_messaged_accounts(user_id: int):
+    if user_id in _cache_sqlite_user_msg:
+        return _cache_sqlite_user_msg[user_id]
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT messaged_log, messaged_manager FROM user_messaged_accounts WHERE user_id = ?", (user_id,)) as cur:
             row = await cur.fetchone()
-            if row:
-                return bool(row["messaged_log"]), bool(row["messaged_manager"])
-            return False, False
+            res = (bool(row["messaged_log"]), bool(row["messaged_manager"])) if row else (False, False)
+            _cache_sqlite_user_msg[user_id] = res
+            return res
 
 async def close_pool():
     """No-op for SQLite engine."""

@@ -47,6 +47,18 @@ async def close_pool():
         logger.info("PostgreSQL connection pool closed.")
 
 # ─────────────────────────────────────────────────────────
+# IN-MEMORY ULTRA-FAST RAM CACHES (0ms latency for repeated lookups)
+# ─────────────────────────────────────────────────────────
+_cache_settings: Dict[int, Dict[str, Any]] = {}
+_cache_account_counts: Dict[int, int] = {}
+_cache_user_info: Dict[int, Dict[str, Any]] = {}
+_cache_force_channels: Optional[List[Dict[str, Any]]] = None
+_cache_bot_settings: Dict[str, str] = {}
+_cache_system_accounts: Dict[str, Dict[str, Any]] = {}
+_cache_user_messaged: Dict[int, Tuple[bool, bool]] = {}
+_known_users: set = set()
+
+# ─────────────────────────────────────────────────────────
 # DATABASE INITIALIZATION - CREATE ALL TABLES
 # ─────────────────────────────────────────────────────────
 async def init_db():
@@ -196,47 +208,60 @@ async def init_db():
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_lead_msg_lookup     ON lead_messages(user_id, bot_message_id);")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_lead_msg_account    ON lead_messages(account_id, lead_id);")
 
-    logger.info("✅ PostgreSQL database initialized with all tables and indexes!")
+        # Pre-warm in-memory caches to guarantee 0ms latency for user interactions
+        try:
+            users_rows = await conn.fetch("SELECT * FROM users")
+            for r in users_rows:
+                _known_users.add(r['user_id'])
+                _cache_user_info[r['user_id']] = dict(r)
 
-# ─────────────────────────────────────────────────────────
-# IN-MEMORY ULTRA-FAST CACHE (0ms latency for repeated lookups)
-# ─────────────────────────────────────────────────────────
-_cache_settings: Dict[int, Dict[str, Any]] = {}
-_cache_account_counts: Dict[int, int] = {}
-_cache_user_info: Dict[int, Dict[str, Any]] = {}
-_cache_force_channels: Optional[List[Dict[str, Any]]] = None
-_cache_bot_settings: Dict[str, str] = {}
-_known_users: set = set()
+            settings_rows = await conn.fetch("SELECT * FROM user_settings")
+            for r in settings_rows:
+                _cache_settings[r['user_id']] = dict(r)
+
+            counts_rows = await conn.fetch("SELECT user_id, COUNT(*) as cnt FROM accounts WHERE status = 'active' AND is_banned = 0 GROUP BY user_id")
+            for r in counts_rows:
+                _cache_account_counts[r['user_id']] = r['cnt']
+
+            sys_rows = await conn.fetch("SELECT * FROM system_accounts")
+            for r in sys_rows:
+                _cache_system_accounts[r['role']] = dict(r)
+
+            b_settings_rows = await conn.fetch("SELECT key, value FROM bot_settings")
+            for r in b_settings_rows:
+                _cache_bot_settings[r['key']] = r['value']
+
+            msg_rows = await conn.fetch("SELECT user_id, messaged_log, messaged_manager FROM user_messaged_accounts")
+            for r in msg_rows:
+                _cache_user_messaged[r['user_id']] = (bool(r['messaged_log']), bool(r['messaged_manager']))
+        except Exception as e:
+            logger.warning(f"Could not pre-warm database caches: {e}")
+
+    logger.info("✅ PostgreSQL database initialized with all tables, indexes, and hot-RAM caches!")
 
 # ─────────────────────────────────────────────────────────
 # USER OPERATIONS
 # ─────────────────────────────────────────────────────────
 async def get_or_create_user(user_id: int, username: str = None, first_name: str = None):
-    # If user already registered in current session, skip redundant 3 DB roundtrips!
+    # If user already registered in current session, skip redundant DB roundtrips (0ms!)
     if user_id in _known_users:
         return
 
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Upsert user
+        # Execute all 3 initializations in 1 single network roundtrip
         await conn.execute("""
             INSERT INTO users (user_id, username, first_name)
             VALUES ($1, $2, $3)
             ON CONFLICT (user_id) DO UPDATE
-            SET username = EXCLUDED.username, first_name = EXCLUDED.first_name
-        """, user_id, username, first_name)
+            SET username = EXCLUDED.username, first_name = EXCLUDED.first_name;
 
-        # Ensure settings row exists
-        await conn.execute("""
             INSERT INTO user_settings (user_id) VALUES ($1)
-            ON CONFLICT (user_id) DO NOTHING
-        """, user_id)
+            ON CONFLICT (user_id) DO NOTHING;
 
-        # Ensure analytics row exists
-        await conn.execute("""
             INSERT INTO analytics (user_id) VALUES ($1)
-            ON CONFLICT (user_id) DO NOTHING
-        """, user_id)
+            ON CONFLICT (user_id) DO NOTHING;
+        """, user_id, username, first_name)
 
     _known_users.add(user_id)
 
@@ -765,6 +790,14 @@ async def set_system_account(
     tg_id: int
 ):
     clean_user = (username or "").replace("@", "").strip()
+    _cache_system_accounts[role] = {
+        "role": role,
+        "session_string": session_string,
+        "phone_number": phone_number,
+        "account_name": account_name,
+        "username": clean_user,
+        "tg_id": tg_id
+    }
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute("""
@@ -780,12 +813,18 @@ async def set_system_account(
         """, role, session_string, phone_number, account_name, clean_user, tg_id)
 
 async def get_system_account(role: str) -> Optional[Dict]:
+    if role in _cache_system_accounts:
+        return _cache_system_accounts[role]
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM system_accounts WHERE role = $1", role)
-        return dict(row) if row else None
+        res = dict(row) if row else None
+        if res:
+            _cache_system_accounts[role] = res
+        return res
 
 async def clear_system_account(role: str):
+    _cache_system_accounts.pop(role, None)
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM system_accounts WHERE role = $1", role)
@@ -795,6 +834,13 @@ async def clear_system_account(role: str):
 # ─────────────────────────────────────────────────────────
 async def mark_user_messaged_account(user_id: int, acc_type: str):
     """Marks that user has sent a message to Log or Manager account."""
+    # Update RAM cache instantly (0ms)
+    has_l, has_m = _cache_user_messaged.get(user_id, (False, False))
+    if acc_type.lower() == "log":
+        _cache_user_messaged[user_id] = (True, has_m)
+    else:
+        _cache_user_messaged[user_id] = (has_l, True)
+
     pool = await get_pool()
     col = "messaged_log" if acc_type.lower() == "log" else "messaged_manager"
     async with pool.acquire() as conn:
@@ -808,15 +854,17 @@ async def mark_user_messaged_account(user_id: int, acc_type: str):
 
 async def has_user_messaged_accounts(user_id: int) -> Tuple[bool, bool]:
     """Returns (has_messaged_log: bool, has_messaged_manager: bool)."""
+    if user_id in _cache_user_messaged:
+        return _cache_user_messaged[user_id]
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             "SELECT messaged_log, messaged_manager FROM user_messaged_accounts WHERE user_id = $1",
             user_id
         )
-        if row:
-            return bool(row["messaged_log"]), bool(row["messaged_manager"])
-        return False, False
+        res = (bool(row["messaged_log"]), bool(row["messaged_manager"])) if row else (False, False)
+        _cache_user_messaged[user_id] = res
+        return res
 
 
 

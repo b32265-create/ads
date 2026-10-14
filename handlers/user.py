@@ -1,5 +1,6 @@
 import os
 import io
+import json
 import logging
 import asyncio
 from aiogram import Router, F, Bot
@@ -42,10 +43,31 @@ class UserStates(StatesGroup):
     waiting_schedule_end = State()
     waiting_forward_account = State()
 
-# In-memory ultra-fast cache for welcome banners & log account
+# Persistent ultra-fast disk+RAM cache for welcome banners & log account
+BANNER_FILE_IDS_PATH = os.path.join(CACHE_DIR, "banner_file_ids.json")
 _USER_BANNER_FILE_ID: dict = {}
 _CACHED_LOG_ACCOUNT: str = ""
 _CACHED_LOG_ACCOUNT_TIME: float = 0.0
+
+def load_banner_file_ids():
+    global _USER_BANNER_FILE_ID
+    try:
+        if os.path.exists(BANNER_FILE_IDS_PATH):
+            with open(BANNER_FILE_IDS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                _USER_BANNER_FILE_ID = {int(k): v for k, v in data.items()}
+    except Exception as e:
+        logger.warning(f"Could not load banner file ids: {e}")
+
+def save_banner_file_id(user_id: int, file_id: str):
+    _USER_BANNER_FILE_ID[user_id] = file_id
+    try:
+        with open(BANNER_FILE_IDS_PATH, "w", encoding="utf-8") as f:
+            json.dump(_USER_BANNER_FILE_ID, f)
+    except Exception as e:
+        logger.warning(f"Could not persist banner file id: {e}")
+
+load_banner_file_ids()
 
 def format_interval(seconds: int) -> str:
     if not seconds or seconds <= 0:
@@ -382,7 +404,7 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
 
     markup = InlineKeyboardMarkup(inline_keyboard=start_keyboard)
 
-    # ⚡ LIGHTNING-FAST BANNER SEND: Check in-memory Telegram file_id first (<50ms!)
+    # ⚡ LIGHTNING-FAST BANNER SEND: Check persistent Telegram file_id first (<50ms!)
     cached_file_id = _USER_BANNER_FILE_ID.get(user_id)
     if cached_file_id:
         try:
@@ -407,23 +429,26 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
                 reply_markup=markup
             )
             if sent_msg.photo:
-                _USER_BANNER_FILE_ID[user_id] = sent_msg.photo[-1].file_id
+                save_banner_file_id(user_id, sent_msg.photo[-1].file_id)
             return
         except Exception as e:
             logger.error(f"Error sending cached banner: {e}")
 
-    # First time user: download avatar and generate in background thread
+    # First time user: download avatar with timeout and generate in background thread
     avatar_bytes = None
     try:
-        photos = await bot.get_user_profile_photos(user_id, limit=1)
-        if photos.total_count > 0:
-            file_id = photos.photos[0][-1].file_id
-            tg_file = await bot.get_file(file_id)
-            avatar_bio = io.BytesIO()
-            await bot.download_file(tg_file.file_path, avatar_bio)
-            avatar_bytes = avatar_bio.getvalue()
+        async def fetch_avatar():
+            photos = await bot.get_user_profile_photos(user_id, limit=1)
+            if photos.total_count > 0:
+                fid = photos.photos[0][-1].file_id
+                tg_file = await bot.get_file(fid)
+                avatar_bio = io.BytesIO()
+                await bot.download_file(tg_file.file_path, avatar_bio)
+                return avatar_bio.getvalue()
+            return None
+        avatar_bytes = await asyncio.wait_for(fetch_avatar(), timeout=1.2)
     except Exception:
-        pass
+        avatar_bytes = None
 
     banner_path = await asyncio.to_thread(
         generate_user_welcome_banner,
@@ -442,7 +467,7 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
                 reply_markup=markup
             )
             if sent_msg.photo:
-                _USER_BANNER_FILE_ID[user_id] = sent_msg.photo[-1].file_id
+                save_banner_file_id(user_id, sent_msg.photo[-1].file_id)
             return
         except Exception as e:
             logger.error(f"Error sending welcome banner: {e}")
