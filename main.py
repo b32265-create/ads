@@ -8,7 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import BOT_TOKEN, ADMIN_IDS
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, Message, CallbackQuery
+from aiogram.types import TelegramObject, Message, CallbackQuery, ErrorEvent
 from typing import Callable, Dict, Any, Awaitable
 import database as db
 from emojis import EMOJI_WARNING
@@ -117,6 +117,19 @@ async def main():
     dp.include_router(account.router)
     dp.include_router(ads_worker.router)
     dp.include_router(admin.router)
+
+    # 3b. Global Error Handler (Prevents bot from silently ignoring users on unhandled errors)
+    @dp.error()
+    async def global_error_handler(event: ErrorEvent):
+        logger.exception(f"Unhandled update error: {event.exception}")
+        if event.update and event.update.message:
+            try:
+                await event.update.message.answer(
+                    "⚠️ <i>Ek technical issue ke kaaran request process nahi ho saki. Kripya kuch samay baad dobara try karein.</i>",
+                    parse_mode="HTML"
+                )
+            except Exception:
+                pass
 
     # 4. Fetch bot info
     bot_info = await bot.get_me()

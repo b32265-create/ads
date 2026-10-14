@@ -47,7 +47,11 @@ async def check_user_force_join(bot: Bot, user_id: int) -> Tuple[bool, list]:
             if member.status in [ChatMemberStatus.LEFT, ChatMemberStatus.KICKED]:
                 unjoined.append(ch)
         except Exception as e:
-            logger.warning(f"Could not verify membership for channel {ch_id}: {e}")
+            err_msg = str(e).lower()
+            if "user not found" in err_msg or "participant" in err_msg:
+                unjoined.append(ch)
+            else:
+                logger.warning(f"Could not verify membership for channel {ch_id}: {e}")
             continue
 
     if unjoined:

@@ -249,19 +249,23 @@ async def get_or_create_user(user_id: int, username: str = None, first_name: str
 
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Execute all 3 initializations in 1 single network roundtrip
-        await conn.execute("""
-            INSERT INTO users (user_id, username, first_name)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (user_id) DO UPDATE
-            SET username = EXCLUDED.username, first_name = EXCLUDED.first_name;
+        async with conn.transaction():
+            await conn.execute("""
+                INSERT INTO users (user_id, username, first_name)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (user_id) DO UPDATE
+                SET username = EXCLUDED.username, first_name = EXCLUDED.first_name
+            """, user_id, username, first_name)
 
-            INSERT INTO user_settings (user_id) VALUES ($1)
-            ON CONFLICT (user_id) DO NOTHING;
+            await conn.execute("""
+                INSERT INTO user_settings (user_id) VALUES ($1)
+                ON CONFLICT (user_id) DO NOTHING
+            """, user_id)
 
-            INSERT INTO analytics (user_id) VALUES ($1)
-            ON CONFLICT (user_id) DO NOTHING;
-        """, user_id, username, first_name)
+            await conn.execute("""
+                INSERT INTO analytics (user_id) VALUES ($1)
+                ON CONFLICT (user_id) DO NOTHING
+            """, user_id)
 
     _known_users.add(user_id)
 

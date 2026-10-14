@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import asyncio
+import html
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, PhotoSize, Video, Document, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart, Command
@@ -83,7 +84,7 @@ def format_interval(seconds: int) -> str:
 def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict, user_info: dict = None) -> str:
     user_info = user_info or {}
     is_premium = user_info.get("is_premium", 0)
-    first_name = user_info.get("first_name", "User")
+    first_name = html.escape(str(user_info.get("first_name") or "User"))
     tier_badge = f"{EMOJI_DIAMOND} <b>VIP PRO</b>" if is_premium else f"{EMOJI_FLASH} <b>Standard Free</b>"
     limit_note = "<i>(Unlimited ∞)</i>" if is_premium else "<i>(Max 5)</i>"
 
@@ -261,76 +262,90 @@ async def show_dashboard(bot: Bot, chat_id: int, user_id: int, message_to_edit: 
 # --- START COMMAND ---
 @router.message(CommandStart())
 async def cmd_start(message: Message, bot: Bot, state: FSMContext):
-    await state.clear()
-    user_id = message.from_user.id
-    username = message.from_user.username
-    first_name = message.from_user.first_name
+    try:
+        await state.clear()
+        user_id = message.from_user.id
+        username = message.from_user.username
+        first_name = message.from_user.first_name
 
-    # Check for referral payload: e.g. /start ref_12345678 or /start 12345678
-    args = message.text.split()[1] if len(message.text.split()) > 1 else ""
-    if args:
-        ref_raw = args.replace("ref_", "").strip()
-        if ref_raw.isdigit():
-            referrer_id = int(ref_raw)
-            try:
-                is_counted, new_count, unlocked_reward = await db.record_user_referral(user_id, referrer_id)
-                if is_counted:
-                    reward_msg = (
-                        f"\n\n🎁 <b>BONUS REWARD ACTIVATED!</b>\n"
-                        f"Har 1 referral par <b>2 Days VIP Premium Access FREE</b> milta hai!\n"
-                        f"Aapke account par <b>+2 Days VIP Access</b> automatically add ho gaya hai! 🚀"
-                    )
-                    try:
-                        await bot.send_message(
-                            referrer_id,
-                            f"╔══════════════════════════╗\n"
-                            f"  🎉 <b>NEW REFERRAL JOINED!</b>\n"
-                            f"╚══════════════════════════╝\n"
-                            f"Aapke referral link se naya user jud gaya hai:\n"
-                            f"• 👤 <b>User:</b> <code>{message.from_user.full_name}</code>\n"
-                            f"• 👥 <b>Total Referrals:</b> <code>{new_count}</code>"
-                            + reward_msg,
-                            parse_mode="HTML"
+        # 1. Register user in DB first (0ms if already known in RAM cache)
+        await db.get_or_create_user(user_id, username, first_name)
+
+        # 2. Check for referral payload: e.g. /start ref_12345678 or /start 12345678
+        args = message.text.split()[1] if len(message.text.split()) > 1 else ""
+        if args:
+            ref_raw = args.replace("ref_", "").strip()
+            if ref_raw.isdigit():
+                referrer_id = int(ref_raw)
+                try:
+                    is_counted, new_count, unlocked_reward = await db.record_user_referral(user_id, referrer_id)
+                    if is_counted:
+                        reward_msg = (
+                            f"\n\n🎁 <b>BONUS REWARD ACTIVATED!</b>\n"
+                            f"Har 1 referral par <b>2 Days VIP Premium Access FREE</b> milta hai!\n"
+                            f"Aapke account par <b>+2 Days VIP Access</b> automatically add ho gaya hai! 🚀"
                         )
-                    except Exception:
-                        pass
-            except Exception as e:
-                logger.warning(f"Error handling referral: {e}")
+                        try:
+                            safe_full_name = html.escape(message.from_user.full_name or "New User")
+                            await bot.send_message(
+                                referrer_id,
+                                f"╔══════════════════════════╗\n"
+                                f"  🎉 <b>NEW REFERRAL JOINED!</b>\n"
+                                f"╚══════════════════════════╝\n"
+                                f"Aapke referral link se naya user jud gaya hai:\n"
+                                f"• 👤 <b>User:</b> <code>{safe_full_name}</code>\n"
+                                f"• 👥 <b>Total Referrals:</b> <code>{new_count}</code>"
+                                + reward_msg,
+                                parse_mode="HTML"
+                            )
+                        except Exception as ref_err:
+                            logger.warning(f"Could not notify referrer {referrer_id}: {ref_err}")
+                except Exception as e:
+                    logger.warning(f"Error handling referral: {e}")
 
-    # Register user in DB (0ms if already known in RAM cache)
-    await db.get_or_create_user(user_id, username, first_name)
-
-    # Parallel check for user info and force join
-    user_info, (is_joined, unjoined) = await asyncio.gather(
-        db.get_user_info(user_id),
-        check_user_force_join(bot, user_id)
-    )
-
-    if user_info and user_info.get('is_banned', 0):
-        await message.answer(
-            f"╔══════════════════════════╗\n"
-            f"  {EMOJI_CROSS} <b>ACCOUNT SUSPENDED</b>\n"
-            f"╚══════════════════════════╝\n"
-            f"Aapka account system dwara ban kar diya gaya hai.\n\n"
-            f"Contact admin if you think this is an error.",
-            parse_mode="HTML"
+        # 3. Parallel check for user info and force join
+        user_info, (is_joined, unjoined) = await asyncio.gather(
+            db.get_user_info(user_id),
+            check_user_force_join(bot, user_id)
         )
-        return
 
-    if not is_joined:
-        await message.answer(
-            f"╔══════════════════════════╗\n"
-            f"  {EMOJI_WARNING} <b>ACCESS RESTRICTED</b>\n"
-            f"╚══════════════════════════╝\n"
-            f"Bot ko use karne ke liye pehle hamare official channels join karein:\n\n"
-            f"<i>Join karne ke baad 'Joined / Try Again' par click karein.</i>",
-            parse_mode="HTML",
-            reply_markup=kb.get_force_join_keyboard(unjoined)
-        )
-        return
+        if user_info and user_info.get('is_banned', 0):
+            await message.answer(
+                f"╔══════════════════════════╗\n"
+                f"  {EMOJI_CROSS} <b>ACCOUNT SUSPENDED</b>\n"
+                f"╚══════════════════════════╝\n"
+                f"Aapka account system dwara ban kar diya gaya hai.\n\n"
+                f"Contact admin if you think this is an error.",
+                parse_mode="HTML"
+            )
+            return
 
-    # 🚀 DIRECT TO CONTROL DASHBOARD (Instant sub-100ms response!)
-    await show_dashboard(bot, message.chat.id, user_id)
+        if not is_joined:
+            await message.answer(
+                f"╔══════════════════════════╗\n"
+                f"  {EMOJI_WARNING} <b>ACCESS RESTRICTED</b>\n"
+                f"╚══════════════════════════╝\n"
+                f"Bot ko use karne ke liye pehle hamare official channels join karein:\n\n"
+                f"<i>Join karne ke baad 'Joined / Try Again' par click karein.</i>",
+                parse_mode="HTML",
+                reply_markup=kb.get_force_join_keyboard(unjoined)
+            )
+            return
+
+        # 4. 🚀 DIRECT TO CONTROL DASHBOARD (Instant sub-100ms response!)
+        await show_dashboard(bot, message.chat.id, user_id)
+
+    except Exception as e:
+        logger.exception(f"Unhandled error in cmd_start for user {message.from_user.id}: {e}")
+        try:
+            await message.answer(
+                f"⚠️ <b>Bot Start Error</b>\n\n"
+                f"Kuch technical issue ke kaaran request process nahi ho saki.\n"
+                f"Kripya <code>/start</code> dobara try karein.",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
 
 # --- VERIFY FORCE JOIN ---
 @router.callback_query(F.data == "verify_force_join")
