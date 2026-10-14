@@ -13,6 +13,7 @@ from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, P
 import database as db
 import keyboards as kb
 from config import API_ID, API_HASH
+from join_helper import join_telegram_target
 from emojis import (
     ID_HEART_FIRE, ID_DIAMOND, ID_BACK, ID_USER, ID_STAR, ID_TRASH, ID_WARNING,
     EMOJI_HEART_FIRE, EMOJI_DIAMOND, EMOJI_BACK, EMOJI_USER, EMOJI_STAR,
@@ -428,7 +429,7 @@ async def delete_single_account(call: CallbackQuery):
     await call.answer("Account removed!")
     await btn_my_accounts(call)
 
-# --- AUTO JOIN GROUPS ---
+# --- AUTO JOIN GROUPS (PUBLIC & PRIVATE) ---
 @router.callback_query(F.data == "auto_join_groups")
 async def btn_auto_join(call: CallbackQuery, state: FSMContext):
     await call.answer()
@@ -440,10 +441,13 @@ async def btn_auto_join(call: CallbackQuery, state: FSMContext):
         
     text = (
         f"╔══════════════════════════╗\n"
-        f"  {EMOJI_TARGET} <b>AUTO JOIN TELEGRAM GROUPS</b>\n"
+        f"  {EMOJI_TARGET} <b>AUTO JOIN GROUPS & CHANNELS</b>\n"
         f"╚══════════════════════════╝\n"
-        f"Apne sabhi <b>{len(accounts)}</b> accounts se naye public groups join karne ke liye unke usernames ya links enter karein:\n\n"
-        f"<i>(Har link ko nayi line me paste karein, e.g. @groupname ya https://t.me/groupname)</i>:"
+        f"Apne sabhi <b>{len(accounts)}</b> accounts se naye Public ya Private groups join karne ke liye unke links enter karein:\n\n"
+        f"• <b>Public:</b> <code>@groupname</code> ya <code>https://t.me/groupname</code>\n"
+        f"• <b>Private Invite:</b> <code>https://t.me/+inviteHash</code> ya <code>https://t.me/joinchat/...</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"<i>(Har link ko nayi line me paste karein)</i>:"
     )
     await state.set_state(AccountStates.waiting_autojoin_links)
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
@@ -457,20 +461,37 @@ async def process_autojoin_links(message: Message, bot: Bot, state: FSMContext):
         return
         
     accounts = await db.get_user_accounts(user_id)
-    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Joining {len(links)} groups across {len(accounts)} accounts...</i>", parse_mode="HTML")
+    if not accounts:
+        await message.answer(f"{EMOJI_CROSS} Koi active account nahi mila.", reply_markup=kb.get_back_keyboard())
+        return
+
+    status_msg = await message.answer(
+        f"{EMOJI_CLOCK} <i>Joining {len(links)} links across {len(accounts)} accounts with anti-flood delay...</i>", 
+        parse_mode="HTML"
+    )
     
     success_count = 0
+    already_count = 0
     fail_count = 0
     
     for acc in accounts:
         try:
             client = TelegramClient(StringSession(acc["session_string"]), API_ID, API_HASH)
             await client.connect()
+            if not await client.is_user_authorized():
+                await client.disconnect()
+                continue
+
             for link in links:
                 try:
-                    clean_target = link.replace("https://t.me/", "").replace("@", "").strip()
-                    await client(telethon.functions.channels.JoinChannelRequest(channel=clean_target))
-                    success_count += 1
+                    ok, note = await join_telegram_target(client, link)
+                    if ok:
+                        if "Already" in note:
+                            already_count += 1
+                        else:
+                            success_count += 1
+                    else:
+                        fail_count += 1
                     await asyncio.sleep(2)
                 except Exception:
                     fail_count += 1
@@ -483,8 +504,10 @@ async def process_autojoin_links(message: Message, bot: Bot, state: FSMContext):
         f"╔══════════════════════════╗\n"
         f"  {EMOJI_VERIFIED} <b>AUTO JOIN BATCH COMPLETED!</b>\n"
         f"╚══════════════════════════╝\n"
-        f"• {EMOJI_VERIFIED} Successfully Joined: <code>{success_count}</code>\n"
-        f"• {EMOJI_CROSS} Skipped / Failed: <code>{fail_count}</code>\n\n"
+        f"┌ {EMOJI_VERIFIED} <b>Successfully Joined:</b> <code>{success_count}</code>\n"
+        f"├ {EMOJI_USER} <b>Already Member:</b> <code>{already_count}</code>\n"
+        f"└ {EMOJI_CROSS} <b>Skipped / Failed:</b> <code>{fail_count}</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"Naye groups aapke target chat pool me shamil ho chuke hain.",
         parse_mode="HTML",
         reply_markup=kb.get_back_keyboard()

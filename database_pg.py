@@ -392,6 +392,15 @@ async def get_user_accounts_all(user_id: int) -> List[Dict]:
         )
         return [dict(r) for r in rows]
 
+async def get_all_active_accounts() -> List[Dict]:
+    """Get ALL active, non-banned accounts across all users for admin mass tasks."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM accounts WHERE status = 'active' AND is_banned = 0 ORDER BY id ASC"
+        )
+        return [dict(r) for r in rows]
+
 async def get_account_count(user_id: int) -> int:
     if user_id in _cache_account_counts:
         return _cache_account_counts[user_id]

@@ -8,7 +8,10 @@ from aiogram.fsm.state import State, StatesGroup
 
 import database as db
 import keyboards as kb
-from config import ADMIN_IDS
+from config import ADMIN_IDS, API_ID, API_HASH
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+from join_helper import join_telegram_target
 from emojis import (
     ID_HEART_FIRE, ID_DIAMOND, ID_BACK, ID_USER, ID_STAR, ID_TRASH, ID_WARNING,
     ID_FIRE, ID_PLANE, ID_MSG, ID_INTERVAL, ID_DELAY, ID_TARGET, ID_MOON,
@@ -33,6 +36,7 @@ class AdminStates(StatesGroup):
     waiting_fsub_link = State()
     waiting_user_search = State()
     waiting_global_setting = State()
+    waiting_mass_join_link = State()
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
@@ -502,3 +506,216 @@ async def process_global_setting(message: Message, state: FSMContext):
     await db.set_bot_setting(key, value)
     await state.clear()
     await message.answer(f"{EMOJI_VERIFIED} <b>Global parameter updated!</b>\n<code>{key}</code> = <code>{value}</code>", parse_mode="HTML")
+
+# ─────────────────────────────────────────────
+# MASS JOIN TO ALL ACCOUNTS (10-SECOND TIMER GAP)
+# ─────────────────────────────────────────────
+_mass_join_cancelled = False
+_is_mass_join_running = False
+
+@router.callback_query(F.data == "admin_mass_join")
+async def admin_mass_join_prompt(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id): return
+    await call.answer()
+
+    total_accs = await db.get_total_accounts()
+    
+    text = (
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_ROCKET} <b>MASS JOIN TO ALL ACCOUNTS</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Yahan Public username ya Private invite link enter karein.\n"
+        f"Bot sabhi <b>{total_accs:,}</b> hosted active accounts se <b>10 seconds ke timer gap</b> par 1-by-1 us link ko join karwayega:\n\n"
+        f"• <b>Public Channel/Group:</b> <code>@username</code> ya <code>https://t.me/username</code>\n"
+        f"• <b>Private Invite Link:</b> <code>https://t.me/+inviteHash</code> ya <code>https://t.me/joinchat/...</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🛡️ <i>Anti-Ban Safety: 10s gap per account enforced.</i>\n\n"
+        f"👉 <i>Channel/Group link yahan send karein:</i>"
+    )
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Cancel", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
+    ])
+    await state.set_state(AdminStates.waiting_mass_join_link)
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+
+@router.callback_query(F.data == "cancel_mass_join")
+async def admin_cancel_mass_join(call: CallbackQuery):
+    if not is_admin(call.from_user.id): return
+    global _mass_join_cancelled
+    _mass_join_cancelled = True
+    await call.answer("🛑 Mass Join cancel request sent! It will stop after the current account.", show_alert=True)
+
+@router.message(AdminStates.waiting_mass_join_link)
+async def process_admin_mass_join(message: Message, bot: Bot, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    global _is_mass_join_running, _mass_join_cancelled
+    
+    if _is_mass_join_running:
+        await message.answer(
+            f"{EMOJI_WARNING} <b>Ek Mass Join already background me run ho raha hai!</b>\n"
+            f"Kripya uske complete hone ka wait karein ya Cancel button dabayein.",
+            parse_mode="HTML",
+            reply_markup=kb.get_admin_keyboard()
+        )
+        return
+
+    link = message.text.strip()
+    if not link:
+        await message.answer(f"{EMOJI_CROSS} Invalid link.", reply_markup=kb.get_admin_keyboard())
+        return
+
+    await state.clear()
+    accounts = await db.get_all_active_accounts()
+    if not accounts:
+        await message.answer(
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_WARNING} <b>NO ACTIVE ACCOUNTS</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"Database me koi active account nahi mila.",
+            parse_mode="HTML",
+            reply_markup=kb.get_admin_keyboard()
+        )
+        return
+
+    total = len(accounts)
+    est_sec = total * 10
+    est_str = f"{est_sec // 60}m {est_sec % 60}s" if est_sec >= 60 else f"{est_sec}s"
+
+    cancel_markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Stop / Cancel Mass Join", callback_data="cancel_mass_join", icon_custom_emoji_id=ID_PAUSED)]
+    ])
+
+    status_msg = await message.answer(
+        f"╔══════════════════════════╗\n"
+        f"  {EMOJI_ROCKET} <b>MASS JOIN INITIATED</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"┌ 🔗 <b>Target:</b> <code>{link}</code>\n"
+        f"├ 📱 <b>Total Accounts:</b> <code>{total}</code>\n"
+        f"├ ⏱️ <b>Timer Gap:</b> <code>10 seconds</code>\n"
+        f"└ ⏳ <b>Estimated Time:</b> <code>~{est_str}</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔄 <i>Mass join background me chalu ho gaya hai. Har account 10s ke gap me join karega...</i>",
+        parse_mode="HTML",
+        reply_markup=cancel_markup
+    )
+
+    _mass_join_cancelled = False
+    _is_mass_join_running = True
+
+    asyncio.create_task(
+        run_mass_join_worker(
+            bot=bot,
+            admin_chat_id=message.chat.id,
+            status_message_id=status_msg.message_id,
+            target_link=link,
+            accounts=accounts
+        )
+    )
+
+async def run_mass_join_worker(bot: Bot, admin_chat_id: int, status_message_id: int, target_link: str, accounts: list):
+    global _is_mass_join_running, _mass_join_cancelled
+    total = len(accounts)
+    success = 0
+    already = 0
+    failed = 0
+    was_cancelled = False
+
+    cancel_markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Stop / Cancel Mass Join", callback_data="cancel_mass_join", icon_custom_emoji_id=ID_PAUSED)]
+    ])
+
+    for idx, acc in enumerate(accounts, start=1):
+        if _mass_join_cancelled:
+            was_cancelled = True
+            logger.info("Mass join stopped by admin cancellation.")
+            break
+
+        phone = acc.get("phone_number", "Unknown")
+        acc_name = acc.get("account_name", phone)
+        session_str = acc.get("session_string")
+
+        if not session_str:
+            failed += 1
+            continue
+
+        try:
+            client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+            await client.connect()
+            if not await client.is_user_authorized():
+                failed += 1
+                await client.disconnect()
+            else:
+                ok, note = await join_telegram_target(client, target_link)
+                await client.disconnect()
+                if ok:
+                    if "Already" in note:
+                        already += 1
+                    else:
+                        success += 1
+                else:
+                    failed += 1
+                    logger.warning(f"Mass join fail for {phone}: {note}")
+        except Exception as e:
+            failed += 1
+            logger.error(f"Mass join error for {phone}: {e}")
+
+        # Update progress card every 3 accounts or when finished/cancelled
+        if idx % 3 == 0 or idx == total or _mass_join_cancelled:
+            try:
+                progress_pct = int((idx / total) * 100)
+                await bot.edit_message_text(
+                    chat_id=admin_chat_id,
+                    message_id=status_message_id,
+                    text=(
+                        f"╔══════════════════════════╗\n"
+                        f"  {EMOJI_ROCKET} <b>MASS JOIN IN PROGRESS ({progress_pct}%)</b>\n"
+                        f"╚══════════════════════════╝\n"
+                        f"┌ 🔗 <b>Target:</b> <code>{target_link}</code>\n"
+                        f"├ 📱 <b>Processed:</b> <code>{idx}/{total} accounts</code>\n"
+                        f"├ {EMOJI_VERIFIED} <b>New Joined:</b> <code>{success}</code>\n"
+                        f"├ {EMOJI_USER} <b>Already Member:</b> <code>{already}</code>\n"
+                        f"└ {EMOJI_CROSS} <b>Failed/Banned:</b> <code>{failed}</code>\n"
+                        f"━━━━━━━━━━━━━━━━━━━━━\n"
+                        f"👤 <i>Current: {acc_name} ({phone})</i>\n"
+                        f"⏱️ <i>Waiting 10s timer gap before next account...</i>"
+                    ),
+                    parse_mode="HTML",
+                    reply_markup=cancel_markup
+                )
+            except Exception:
+                pass
+
+        # 10 second timer gap between accounts (with responsive cancel checks)
+        if idx < total and not _mass_join_cancelled:
+            for _ in range(10):
+                if _mass_join_cancelled:
+                    was_cancelled = True
+                    break
+                await asyncio.sleep(1)
+
+    _is_mass_join_running = False
+
+    # Send final summary card
+    status_header = f"{EMOJI_WARNING} <b>MASS JOIN STOPPED BY ADMIN</b>" if was_cancelled else f"{EMOJI_VERIFIED} <b>MASS JOIN COMPLETED!</b>"
+    try:
+        await bot.edit_message_text(
+            chat_id=admin_chat_id,
+            message_id=status_message_id,
+            text=(
+                f"╔══════════════════════════╗\n"
+                f"  {status_header}\n"
+                f"╚══════════════════════════╝\n"
+                f"┌ 🔗 <b>Target:</b> <code>{target_link}</code>\n"
+                f"├ 📱 <b>Total Accounts:</b> <code>{total}</code>\n"
+                f"├ {EMOJI_VERIFIED} <b>Successfully Joined:</b> <code>{success}</code>\n"
+                f"├ {EMOJI_USER} <b>Already Members:</b> <code>{already}</code>\n"
+                f"└ {EMOJI_CROSS} <b>Failed / Inaccessible:</b> <code>{failed}</code>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"⏱️ <i>Timer Gap: 10 seconds per account enforced</i>\n"
+                f"💎 <i>Fleet execution finished.</i>"
+            ),
+            parse_mode="HTML",
+            reply_markup=kb.get_admin_keyboard()
+        )
+    except Exception:
+        pass

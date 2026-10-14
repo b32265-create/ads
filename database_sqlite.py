@@ -292,6 +292,14 @@ async def get_user_accounts_all(user_id: int):
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
+async def get_all_active_accounts():
+    """Get ALL active, non-banned accounts across all users for admin mass tasks."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM accounts WHERE status = 'active' AND is_banned = 0 ORDER BY id ASC") as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
 async def get_account_count(user_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT COUNT(*) FROM accounts WHERE user_id = ? AND status = 'active' AND is_banned = 0", (user_id,)) as cursor:

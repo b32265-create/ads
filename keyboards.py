@@ -170,6 +170,9 @@ def get_admin_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="Global Settings", callback_data="admin_settings", icon_custom_emoji_id=ID_HEART_FIRE),
+            InlineKeyboardButton(text="Mass Join (All Accs)", callback_data="admin_mass_join", icon_custom_emoji_id=ID_ROCKET),
+        ],
+        [
             InlineKeyboardButton(text="Close Admin Panel", callback_data="admin_close", icon_custom_emoji_id=ID_BACK)
         ]
     ]
