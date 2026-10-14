@@ -133,12 +133,25 @@ async def main():
     except Exception as e:
         logger.warning(f"Could not initialize DM relay listeners: {e}")
 
+    # 6b. Initialize official System Clients (Log Account & Manager Account)
+    try:
+        from system_clients import init_system_clients, stop_system_client
+        asyncio.create_task(init_system_clients(bot))
+    except Exception as e:
+        logger.warning(f"Could not initialize system clients: {e}")
+
     # 7. Start Polling
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
+        try:
+            from system_clients import stop_system_client
+            await stop_system_client("log")
+            await stop_system_client("manager")
+        except Exception:
+            pass
         if health_runner:
             try:
                 await health_runner.cleanup()

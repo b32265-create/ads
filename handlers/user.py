@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 import time
+from config import ADMIN_IDS
 import database as db
 import keyboards as kb
 from banner_generator import generate_user_welcome_banner, CACHE_DIR
@@ -128,8 +129,79 @@ async def get_bot_username(bot: Bot) -> str:
         _CACHED_BOT_USERNAME = bot_info.username or "ALL_SHADOWS_BOT"
     return _CACHED_BOT_USERNAME
 
+async def check_user_system_accounts_status(user_id: int):
+    """
+    Checks if Log and Manager accounts are configured, and whether user has messaged them.
+    Returns: (is_required: bool, is_all_ok: bool, log_acc: str, has_log: bool, mgr_acc: str, has_mgr: bool)
+    """
+    log_acc = await db.get_log_account()
+    mgr_acc = await db.get_manager_account()
+    has_log, has_mgr = await db.has_user_messaged_accounts(user_id)
+
+    req_log = bool(log_acc)
+    req_mgr = bool(mgr_acc)
+
+    if not req_log and not req_mgr:
+        return False, True, "", True, "", True
+
+    ok_log = (not req_log) or has_log
+    ok_mgr = (not req_mgr) or has_mgr
+    is_all_ok = ok_log and ok_mgr
+
+    return True, is_all_ok, (log_acc or ""), has_log, (mgr_acc or ""), has_mgr
+
+def build_accounts_verification_ui(log_acc: str, has_log: bool, mgr_acc: str, has_mgr: bool):
+    status_items = []
+    keyboard = []
+
+    if log_acc:
+        st_icon = f"{EMOJI_VERIFIED} <b>Verified</b>" if has_log else f"{EMOJI_CROSS} <b>Pending (Message 'Hi')</b>"
+        status_items.append(f"📡 <b>Live Logs Account:</b> <a href='https://t.me/{log_acc}'>@{log_acc}</a>\n   └ Status: {st_icon}")
+        if not has_log:
+            keyboard.append([InlineKeyboardButton(text=f"📡 Message @{log_acc} (Send 'Hi')", url=f"https://t.me/{log_acc}", icon_custom_emoji_id=ID_STAR)])
+
+    if mgr_acc:
+        st_icon = f"{EMOJI_VERIFIED} <b>Verified</b>" if has_mgr else f"{EMOJI_CROSS} <b>Pending (Message 'Hi')</b>"
+        status_items.append(f"👔 <b>Lead Manager Account:</b> <a href='https://t.me/{mgr_acc}'>@{mgr_acc}</a>\n   └ Status: {st_icon}")
+        if not has_mgr:
+            keyboard.append([InlineKeyboardButton(text=f"👔 Message @{mgr_acc} (Send 'Hi')", url=f"https://t.me/{mgr_acc}", icon_custom_emoji_id=ID_USER)])
+
+    accounts_block = "\n\n".join(status_items)
+
+    text = (
+        f"╔══════════════════════════╗\n"
+        f"  🔐 <b>MANDATORY ACTIVATION REQUIRED</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Shadow Ads Bot ko use karne ke liye aapko official <b>Log Account</b> aur <b>Manager Account</b> ko direct message (e.g. <i>'Hi'</i>) bhejna <b>compulsory</b> hai.\n\n"
+        f"🛡️ <b>Kyu compulsory hai?</b>\n"
+        f"Telegram peer-flood restriction ke kaaran, jab tak aap un accounts ko pehle message nahi karte, tab tak bot aapko live ad delivery logs aur lead inquiries forward nahi kar sakta.\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{accounts_block}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 <i>Accounts ke link par click karke 'Hi' bhejein, fir neeche 'Check Verification' dabayein!</i>"
+    )
+
+    keyboard.append([
+        InlineKeyboardButton(text="✅ Check Verification / Unlock", callback_data="check_accounts_messaged", icon_custom_emoji_id=ID_VERIFIED)
+    ])
+
+    return text, InlineKeyboardMarkup(inline_keyboard=keyboard)
+
 async def show_dashboard(bot: Bot, chat_id: int, user_id: int, message_to_edit: Message = None):
     """Utility to render and send/edit the exact dashboard with premium styling."""
+    if user_id not in ADMIN_IDS:
+        is_required, is_all_ok, log_acc, has_log, mgr_acc, has_mgr = await check_user_system_accounts_status(user_id)
+        if is_required and not is_all_ok:
+            text, markup = build_accounts_verification_ui(log_acc, has_log, mgr_acc, has_mgr)
+            if message_to_edit:
+                try:
+                    await message_to_edit.edit_text(text, reply_markup=markup, parse_mode="HTML")
+                    return
+                except Exception:
+                    pass
+            await bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+            return
+
     bot_username = await get_bot_username(bot)
 
     accounts_count, settings, user_info = await asyncio.gather(
@@ -198,21 +270,15 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
     # Register user in DB
     await db.get_or_create_user(user_id, username, first_name)
 
-    # 1. Parallel check for user info, force join, and log account
-    global _CACHED_LOG_ACCOUNT, _CACHED_LOG_ACCOUNT_TIME
-    now = time.time()
-    if now - _CACHED_LOG_ACCOUNT_TIME > 60.0:
-        try:
-            _CACHED_LOG_ACCOUNT = await db.get_log_account()
-            _CACHED_LOG_ACCOUNT_TIME = now
-        except Exception:
-            pass
-    log_account = _CACHED_LOG_ACCOUNT
-
-    user_info, (is_joined, unjoined) = await asyncio.gather(
+    # 1. Parallel check for user info, force join, and system accounts
+    user_info, (is_joined, unjoined), (is_required, is_all_ok, log_account, has_log, mgr_account, has_mgr) = await asyncio.gather(
         db.get_user_info(user_id),
-        check_user_force_join(bot, user_id)
+        check_user_force_join(bot, user_id),
+        check_user_system_accounts_status(user_id)
     )
+
+    if user_id in ADMIN_IDS:
+        is_all_ok = True
 
     if user_info and user_info.get('is_banned', 0):
         await message.answer(
@@ -238,7 +304,23 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
         return
 
     log_section = ""
-    if log_account:
+    if is_required and not is_all_ok:
+        status_items = []
+        if log_account:
+            st = f"{EMOJI_VERIFIED} <b>Verified</b>" if has_log else f"{EMOJI_CROSS} <b>Pending (Send 'Hi')</b>"
+            status_items.append(f"• 📡 <b>Live Logs Acc:</b> <a href='https://t.me/{log_account}'>@{log_account}</a>\n   └ Status: {st}")
+        if mgr_account:
+            st = f"{EMOJI_VERIFIED} <b>Verified</b>" if has_mgr else f"{EMOJI_CROSS} <b>Pending (Send 'Hi')</b>"
+            status_items.append(f"• 👔 <b>DM Manager Acc:</b> <a href='https://t.me/{mgr_account}'>@{mgr_account}</a>\n   └ Status: {st}")
+
+        log_section = (
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔐 <b>MANDATORY ACTIVATION REQUIRED:</b>\n"
+            f"Bot access karne ke liye pehle dono accounts ko direct message (Hi) bhejein:\n\n"
+            + "\n".join(status_items) + "\n\n"
+            f"👉 <i>Dono accounts ko message karne ke baad 'Check Verification' dabayein!</i>\n"
+        )
+    elif log_account:
         log_section = (
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"📡 <b>LIVE AD DELIVERY LOGS ACCOUNT:</b>\n"
@@ -257,14 +339,34 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
         f"Powered by: <a href='https://t.me/SHADOW_SELLER07'>@SHADOW_SELLER07</a>"
     )
 
-    start_keyboard = [
-        [InlineKeyboardButton(text="Open Control Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_FIRE)],
-        [InlineKeyboardButton(text="Refer & Earn (Free VIP)", callback_data="refer_earn", icon_custom_emoji_id=ID_GIFT)],
-    ]
-    if log_account:
+    start_keyboard = []
+    if is_required and not is_all_ok:
+        if log_account and not has_log:
+            start_keyboard.append([
+                InlineKeyboardButton(text=f"📡 Message Logs: @{log_account}", url=f"https://t.me/{log_account}", icon_custom_emoji_id=ID_STAR)
+            ])
+        if mgr_account and not has_mgr:
+            start_keyboard.append([
+                InlineKeyboardButton(text=f"👔 Message Manager: @{mgr_account}", url=f"https://t.me/{mgr_account}", icon_custom_emoji_id=ID_USER)
+            ])
         start_keyboard.append([
-            InlineKeyboardButton(text=f"Live Logs: @{log_account}", url=f"https://t.me/{log_account}", icon_custom_emoji_id=ID_STAR)
+            InlineKeyboardButton(text="✅ Check Verification / Unlock", callback_data="check_accounts_messaged", icon_custom_emoji_id=ID_VERIFIED)
         ])
+        start_keyboard.append([
+            InlineKeyboardButton(text="Refer & Earn (Free VIP)", callback_data="refer_earn", icon_custom_emoji_id=ID_GIFT)
+        ])
+    else:
+        start_keyboard.append([
+            InlineKeyboardButton(text="Open Control Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_FIRE)
+        ])
+        start_keyboard.append([
+            InlineKeyboardButton(text="Refer & Earn (Free VIP)", callback_data="refer_earn", icon_custom_emoji_id=ID_GIFT)
+        ])
+        if log_account:
+            start_keyboard.append([
+                InlineKeyboardButton(text=f"Live Logs: @{log_account}", url=f"https://t.me/{log_account}", icon_custom_emoji_id=ID_STAR)
+            ])
+
     start_keyboard.append([
         InlineKeyboardButton(text="Lifetime VIP Pass (₹100)", callback_data="premium", icon_custom_emoji_id=ID_DIAMOND)
     ])
@@ -355,6 +457,21 @@ async def verify_force_join(call: CallbackQuery, bot: Bot):
 async def back_to_dash(call: CallbackQuery, bot: Bot, state: FSMContext):
     await state.clear()
     await call.answer()
+    user_id = call.from_user.id
+    if user_id not in ADMIN_IDS:
+        is_required, is_all_ok, log_acc, has_log, mgr_acc, has_mgr = await check_user_system_accounts_status(user_id)
+        if is_required and not is_all_ok:
+            text, markup = build_accounts_verification_ui(log_acc, has_log, mgr_acc, has_mgr)
+            if call.message.photo or call.message.video or call.message.animation or call.message.document:
+                try:
+                    await call.message.delete()
+                except Exception:
+                    pass
+                await bot.send_message(call.message.chat.id, text, reply_markup=markup, parse_mode="HTML")
+            else:
+                await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+            return
+
     if call.message.photo or call.message.video or call.message.animation or call.message.document:
         try:
             await call.message.delete()
@@ -363,6 +480,46 @@ async def back_to_dash(call: CallbackQuery, bot: Bot, state: FSMContext):
         await show_dashboard(bot, call.message.chat.id, call.from_user.id)
     else:
         await show_dashboard(bot, call.message.chat.id, call.from_user.id, message_to_edit=call.message)
+
+# --- CHECK MANDATORY ACCOUNTS MESSAGED ---
+@router.callback_query(F.data == "check_accounts_messaged")
+async def callback_check_accounts_messaged(call: CallbackQuery, bot: Bot):
+    user_id = call.from_user.id
+    is_required, is_all_ok, log_acc, has_log, mgr_acc, has_mgr = await check_user_system_accounts_status(user_id)
+    if user_id in ADMIN_IDS:
+        is_all_ok = True
+
+    if not is_all_ok:
+        missing = []
+        if log_acc and not has_log:
+            missing.append(f"• 📡 Logs: @{log_acc}")
+        if mgr_acc and not has_mgr:
+            missing.append(f"• 👔 Manager: @{mgr_acc}")
+        alert_txt = (
+            "⚠️ Verification Incomplete!\n\n"
+            "Aapne abhi tak in accounts ko message nahi bheja hai:\n"
+            + "\n".join(missing) + "\n\n"
+            "Kripya direct message me 'Hi' bhej kar confirm karein."
+        )
+        await call.answer(alert_txt, show_alert=True)
+
+        text, markup = build_accounts_verification_ui(log_acc, has_log, mgr_acc, has_mgr)
+        if not (call.message.photo or call.message.video):
+            try:
+                await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+            except Exception:
+                pass
+        return
+
+    await call.answer("🎉 Verification Successful! Control Dashboard unlocked.", show_alert=True)
+    if call.message.photo or call.message.video:
+        try:
+            await call.message.delete()
+        except Exception:
+            pass
+        await show_dashboard(bot, call.message.chat.id, user_id)
+    else:
+        await show_dashboard(bot, call.message.chat.id, user_id, message_to_edit=call.message)
 
 # --- SET AD MESSAGE (Text + Media) ---
 @router.callback_query(F.data == "set_ad_msg")

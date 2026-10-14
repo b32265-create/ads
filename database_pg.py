@@ -159,6 +159,29 @@ async def init_db():
         );
         """)
 
+        # 8. SYSTEM ACCOUNTS (Admin-hosted Log Account & Manager Account)
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS system_accounts (
+            role           TEXT PRIMARY KEY,
+            session_string TEXT,
+            phone_number   TEXT,
+            account_name   TEXT,
+            username       TEXT,
+            tg_id          BIGINT,
+            updated_at     TIMESTAMPTZ DEFAULT NOW()
+        );
+        """)
+
+        # 9. USER MESSAGED ACCOUNTS (Mandatory verification tracking)
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_messaged_accounts (
+            user_id          BIGINT PRIMARY KEY,
+            messaged_log     SMALLINT DEFAULT 0,
+            messaged_manager SMALLINT DEFAULT 0,
+            updated_at       TIMESTAMPTZ DEFAULT NOW()
+        );
+        """)
+
         # Migrations for user_settings
         await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS forward_account TEXT DEFAULT NULL;")
 
@@ -647,6 +670,9 @@ async def set_user_premium_status(user_id: int, is_premium: int = 1, days: Optio
 # LOG ACCOUNT OPERATIONS
 # ─────────────────────────────────────────────────────────
 async def get_log_account() -> str:
+    acc = await get_system_account("log")
+    if acc and acc.get("username"):
+        return acc["username"]
     val = await get_bot_setting("log_account_username", "")
     return val or ""
 
@@ -658,6 +684,9 @@ async def set_log_account(username: str):
 # MANAGER ACCOUNT & LEAD DM RELAY OPERATIONS
 # ─────────────────────────────────────────────────────────
 async def get_manager_account() -> str:
+    acc = await get_system_account("manager")
+    if acc and acc.get("username"):
+        return acc["username"]
     val = await get_bot_setting("manager_account_username", "")
     return val or ""
 
@@ -720,5 +749,71 @@ async def set_user_forward_account(user_id: int, forward_acc: str):
             clean or None, user_id
         )
     _cache_settings.pop(user_id, None)
+
+# ─────────────────────────────────────────────────────────
+# SYSTEM ACCOUNTS (LOG & MANAGER USERBOT LOGIN)
+# ─────────────────────────────────────────────────────────
+async def set_system_account(
+    role: str,
+    session_string: str,
+    phone_number: str,
+    account_name: str,
+    username: str,
+    tg_id: int
+):
+    clean_user = (username or "").replace("@", "").strip()
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO system_accounts (role, session_string, phone_number, account_name, username, tg_id, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW())
+            ON CONFLICT (role) DO UPDATE SET
+                session_string = EXCLUDED.session_string,
+                phone_number   = EXCLUDED.phone_number,
+                account_name   = EXCLUDED.account_name,
+                username       = EXCLUDED.username,
+                tg_id          = EXCLUDED.tg_id,
+                updated_at     = NOW()
+        """, role, session_string, phone_number, account_name, clean_user, tg_id)
+
+async def get_system_account(role: str) -> Optional[Dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM system_accounts WHERE role = $1", role)
+        return dict(row) if row else None
+
+async def clear_system_account(role: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM system_accounts WHERE role = $1", role)
+
+# ─────────────────────────────────────────────────────────
+# MANDATORY USER MESSAGE VERIFICATION
+# ─────────────────────────────────────────────────────────
+async def mark_user_messaged_account(user_id: int, acc_type: str):
+    """Marks that user has sent a message to Log or Manager account."""
+    pool = await get_pool()
+    col = "messaged_log" if acc_type.lower() == "log" else "messaged_manager"
+    async with pool.acquire() as conn:
+        await conn.execute(f"""
+            INSERT INTO user_messaged_accounts (user_id, {col}, updated_at)
+            VALUES ($1, 1, NOW())
+            ON CONFLICT (user_id) DO UPDATE SET
+                {col} = 1,
+                updated_at = NOW()
+        """, user_id)
+
+async def has_user_messaged_accounts(user_id: int) -> Tuple[bool, bool]:
+    """Returns (has_messaged_log: bool, has_messaged_manager: bool)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT messaged_log, messaged_manager FROM user_messaged_accounts WHERE user_id = $1",
+            user_id
+        )
+        if row:
+            return bool(row["messaged_log"]), bool(row["messaged_manager"])
+        return False, False
+
 
 

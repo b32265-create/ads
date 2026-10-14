@@ -11,6 +11,8 @@ import keyboards as kb
 from config import ADMIN_IDS, API_ID, API_HASH
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, PasswordHashInvalidError
+from system_clients import start_system_client, stop_system_client
 from join_helper import join_telegram_target
 from emojis import (
     ID_HEART_FIRE, ID_DIAMOND, ID_BACK, ID_USER, ID_STAR, ID_TRASH, ID_WARNING,
@@ -29,6 +31,9 @@ logger = logging.getLogger(__name__)
 
 router = Router(name="admin_router")
 
+# In-memory dictionary for admin login attempts
+admin_sys_login_sessions = {}
+
 class AdminStates(StatesGroup):
     waiting_broadcast = State()
     waiting_fsub_id = State()
@@ -39,6 +44,10 @@ class AdminStates(StatesGroup):
     waiting_mass_join_link = State()
     waiting_log_account = State()
     waiting_manager_account = State()
+    waiting_sys_phone = State()
+    waiting_sys_otp = State()
+    waiting_sys_2fa = State()
+    waiting_sys_session = State()
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
@@ -512,37 +521,60 @@ async def process_global_setting(message: Message, state: FSMContext):
 # ─────────────────────────────────────────────
 # LOG ACCOUNT MANAGEMENT
 # ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# LOG ACCOUNT MANAGEMENT (LOGIN & USERBOT HOSTING)
+# ─────────────────────────────────────────────
 @router.callback_query(F.data == "admin_log_account")
 async def admin_log_account_view(call: CallbackQuery):
     if not is_admin(call.from_user.id): return
     await call.answer()
     
-    current_log = await db.get_log_account()
-    log_display = f"@{current_log}" if current_log else "<i>Not Set (Disabled)</i>"
-    
+    sys_acc = await db.get_system_account("log")
+    if sys_acc and sys_acc.get("session_string"):
+        user_h = f"@{sys_acc.get('username')}" if sys_acc.get('username') else "No Username"
+        status_line = (
+            f"🟢 <b>Logged In Userbot:</b> {sys_acc.get('account_name', 'Telegram User')} ({user_h})\n"
+            f"📱 <b>Phone:</b> <code>{sys_acc.get('phone_number', 'N/A')}</code> | ID: <code>{sys_acc.get('tg_id', 'N/A')}</code>\n"
+            f"📡 <b>Status:</b> Active 24/7 (Listening for user messages & logs)"
+        )
+    else:
+        raw_log = await db.get_log_account()
+        log_h = f"@{raw_log}" if raw_log else "Not Configured"
+        status_line = f"🔴 <b>Status:</b> Not Logged In ({log_h})"
+
     text = (
         f"╔══════════════════════════╗\n"
         f"  📡 <b>LIVE LOG ACCOUNT CONFIG</b>\n"
         f"╚══════════════════════════╝\n"
-        f"Aap ek official Telegram Log Account ya Channel set kar sakte hain.\n"
-        f"Jab user bot start karega, toh usse is Log Account ka direct link milega, jahan se wo apne automated ads ke live delivery logs dekh sakega.\n\n"
-        f"┌ 📡 <b>Current Log Account:</b> <code>{log_display}</code>\n"
-        f"└ ⚙️ <b>Status:</b> {'🟢 Active' if current_log else '🔴 Inactive'}\n"
+        f"Aap yahan apna official <b>Log Account</b> login kar sakte hain:\n"
+        f"• Jab user bot start karega, usse is account par message karna compulsory hoga.\n"
+        f"• User jaise hi message karega, bot usse live campaigns ke delivery logs bhej sakega!\n\n"
+        f"{status_line}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Niche button se naya account username set ya clear karein:"
+        f"Niche diye gaye options se account connect ya manage karein:"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Set / Change Log Account", callback_data="admin_set_log_acc", icon_custom_emoji_id=ID_STAR)],
-        [InlineKeyboardButton(text="Remove / Clear Log Account", callback_data="admin_clear_log_acc", icon_custom_emoji_id=ID_TRASH)],
-        [InlineKeyboardButton(text="Back to Admin", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
+        [
+            InlineKeyboardButton(text="📱 Login with Phone (OTP)", callback_data="admin_login_phone_log", icon_custom_emoji_id=ID_STAR),
+            InlineKeyboardButton(text="🔑 Login with Session", callback_data="admin_login_session_log", icon_custom_emoji_id=ID_FLASH)
+        ],
+        [
+            InlineKeyboardButton(text="✏️ Quick Username Set", callback_data="admin_set_log_acc", icon_custom_emoji_id=ID_MSG),
+            InlineKeyboardButton(text="🗑️ Logout / Remove", callback_data="admin_clear_log_acc", icon_custom_emoji_id=ID_TRASH)
+        ],
+        [
+            InlineKeyboardButton(text="Back to Admin", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)
+        ]
     ])
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
 @router.callback_query(F.data == "admin_clear_log_acc")
 async def admin_clear_log_account(call: CallbackQuery):
     if not is_admin(call.from_user.id): return
+    await db.clear_system_account("log")
     await db.set_log_account("")
-    await call.answer("Log account cleared!", show_alert=True)
+    await stop_system_client("log")
+    await call.answer("Log account logged out and cleared!", show_alert=True)
     await admin_log_account_view(call)
 
 @router.callback_query(F.data == "admin_set_log_acc")
@@ -550,7 +582,6 @@ async def admin_set_log_account_prompt(call: CallbackQuery, state: FSMContext):
     if not is_admin(call.from_user.id): return
     await call.answer()
     await state.set_state(AdminStates.waiting_log_account)
-    
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Cancel", callback_data="admin_log_account", icon_custom_emoji_id=ID_BACK)]
     ])
@@ -558,8 +589,8 @@ async def admin_set_log_account_prompt(call: CallbackQuery, state: FSMContext):
         f"╔══════════════════════════╗\n"
         f"  📡 <b>ENTER LOG ACCOUNT USERNAME</b>\n"
         f"╚══════════════════════════╝\n"
-        f"Log account ya bot ka Telegram username enter karein:\n\n"
-        f"<i>(Example: <code>@shadow_logs_bot</code> ya <code>shadow_logs</code>)</i>",
+        f"Log account ya channel ka username enter karein:\n"
+        f"<i>(Example: <code>@shadow_logs_bot</code>)</i>",
         parse_mode="HTML",
         reply_markup=markup
     )
@@ -577,48 +608,67 @@ async def process_set_log_account(message: Message, state: FSMContext):
         f"╔══════════════════════════╗\n"
         f"  {EMOJI_VERIFIED} <b>LOG ACCOUNT UPDATED!</b>\n"
         f"╚══════════════════════════╝\n"
-        f"Naya Log Account set ho gaya: <b>@{val}</b>\n"
-        f"Users ko welcome screen par iska connection badge show hoga.",
+        f"Log Account username set ho gaya: <b>@{val}</b>",
         parse_mode="HTML",
         reply_markup=kb.get_admin_keyboard()
     )
 
+
 # ─────────────────────────────────────────────
-# MANAGER ACCOUNT CONFIGURATION (DM RELAY & AUTO-RESPONDER)
+# MANAGER ACCOUNT MANAGEMENT (LOGIN & DM RELAY)
 # ─────────────────────────────────────────────
 @router.callback_query(F.data == "admin_manager_account")
 async def admin_manager_account_view(call: CallbackQuery):
     if not is_admin(call.from_user.id): return
     await call.answer()
     
-    current_mgr = await db.get_manager_account()
-    mgr_display = f"@{current_mgr}" if current_mgr else "<i>Not Set (Disabled)</i>"
-    
+    sys_acc = await db.get_system_account("manager")
+    if sys_acc and sys_acc.get("session_string"):
+        user_h = f"@{sys_acc.get('username')}" if sys_acc.get('username') else "No Username"
+        status_line = (
+            f"🟢 <b>Logged In Userbot:</b> {sys_acc.get('account_name', 'Telegram User')} ({user_h})\n"
+            f"📱 <b>Phone:</b> <code>{sys_acc.get('phone_number', 'N/A')}</code> | ID: <code>{sys_acc.get('tg_id', 'N/A')}</code>\n"
+            f"👤 <b>Status:</b> Active 24/7 (Listening for leads & two-way relays)"
+        )
+    else:
+        raw_mgr = await db.get_manager_account()
+        mgr_h = f"@{raw_mgr}" if raw_mgr else "Not Configured"
+        status_line = f"🔴 <b>Status:</b> Not Logged In ({mgr_h})"
+
     text = (
         f"╔══════════════════════════╗\n"
         f"  👤 <b>DM MANAGER ACCOUNT CONFIG</b>\n"
         f"╚══════════════════════════╝\n"
-        f"Jab customer apne alt accounts host karega aur unpar ads chalengi, toh jo bhi leads/DMs un accounts par aayenge:\n"
-        f"1️⃣ Wo DMs customer ke main account/bot ko forward honge.\n"
-        f"2️⃣ Jab customer reply karega, toh ye Manager Account unke response ko direct lead ko bhej dega!\n"
-        f"3️⃣ Is Manager Account ko saare incoming lead DMs ka live sync log milega.\n\n"
-        f"┌ 👤 <b>Current Manager Account:</b> <code>{mgr_display}</code>\n"
-        f"└ ⚙️ <b>Status:</b> {'🟢 Active' if current_mgr else '🔴 Inactive'}\n"
+        f"Aap yahan apna official <b>Lead Manager Account</b> login kar sakte hain:\n"
+        f"• Jab customer apne alt accounts host karega, unpar aane wale saare lead DMs ye manager account receive karega.\n"
+        f"• Customer jab reply karega, toh ye manager account uss alt account se lead ko response deliver karega!\n"
+        f"• User ke liye bot start karne par is account ko message karna compulsory rahega.\n\n"
+        f"{status_line}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Niche button se naya account username set ya clear karein:"
+        f"Niche diye gaye options se account connect ya manage karein:"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Set / Change Manager Account", callback_data="admin_set_mgr_acc", icon_custom_emoji_id=ID_USER)],
-        [InlineKeyboardButton(text="Remove / Clear Manager Account", callback_data="admin_clear_mgr_acc", icon_custom_emoji_id=ID_TRASH)],
-        [InlineKeyboardButton(text="Back to Admin", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
+        [
+            InlineKeyboardButton(text="📱 Login with Phone (OTP)", callback_data="admin_login_phone_manager", icon_custom_emoji_id=ID_STAR),
+            InlineKeyboardButton(text="🔑 Login with Session", callback_data="admin_login_session_manager", icon_custom_emoji_id=ID_FLASH)
+        ],
+        [
+            InlineKeyboardButton(text="✏️ Quick Username Set", callback_data="admin_set_mgr_acc", icon_custom_emoji_id=ID_USER),
+            InlineKeyboardButton(text="🗑️ Logout / Remove", callback_data="admin_clear_mgr_acc", icon_custom_emoji_id=ID_TRASH)
+        ],
+        [
+            InlineKeyboardButton(text="Back to Admin", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)
+        ]
     ])
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
 @router.callback_query(F.data == "admin_clear_mgr_acc")
 async def admin_clear_manager_account(call: CallbackQuery):
     if not is_admin(call.from_user.id): return
+    await db.clear_system_account("manager")
     await db.set_manager_account("")
-    await call.answer("Manager account cleared!", show_alert=True)
+    await stop_system_client("manager")
+    await call.answer("Manager account logged out and cleared!", show_alert=True)
     await admin_manager_account_view(call)
 
 @router.callback_query(F.data == "admin_set_mgr_acc")
@@ -626,7 +676,6 @@ async def admin_set_manager_account_prompt(call: CallbackQuery, state: FSMContex
     if not is_admin(call.from_user.id): return
     await call.answer()
     await state.set_state(AdminStates.waiting_manager_account)
-    
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Cancel", callback_data="admin_manager_account", icon_custom_emoji_id=ID_BACK)]
     ])
@@ -634,8 +683,8 @@ async def admin_set_manager_account_prompt(call: CallbackQuery, state: FSMContex
         f"╔══════════════════════════╗\n"
         f"  👤 <b>ENTER MANAGER ACCOUNT USERNAME / ID</b>\n"
         f"╚══════════════════════════╝\n"
-        f"Manager account ka Telegram username ya Chat ID enter karein:\n\n"
-        f"<i>(Example: <code>@shadow_manager</code> ya <code>123456789</code>)</i>",
+        f"Manager account ka Telegram username enter karein:\n"
+        f"<i>(Example: <code>@shadow_manager</code>)</i>",
         parse_mode="HTML",
         reply_markup=markup
     )
@@ -645,7 +694,7 @@ async def process_set_manager_account(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id): return
     val = message.text.strip().replace("@", "")
     if not val:
-        await message.answer(f"{EMOJI_CROSS} Invalid username or ID.")
+        await message.answer(f"{EMOJI_CROSS} Invalid username.")
         return
     await db.set_manager_account(val)
     await state.clear()
@@ -653,11 +702,280 @@ async def process_set_manager_account(message: Message, state: FSMContext):
         f"╔══════════════════════════╗\n"
         f"  {EMOJI_VERIFIED} <b>MANAGER ACCOUNT UPDATED!</b>\n"
         f"╚══════════════════════════╝\n"
-        f"Naya DM Manager Account set ho gaya: <b>@{val}</b>\n"
-        f"Ab alt accounts par aane wale saare lead DMs aur replies ka relay sync activate ho gaya hai.",
+        f"Manager account username set ho gaya: <b>@{val}</b>",
         parse_mode="HTML",
         reply_markup=kb.get_admin_keyboard()
     )
+
+
+# ─────────────────────────────────────────────
+# SYSTEM ACCOUNT LOGIN WORKFLOW (PHONE OTP / STRING SESSION)
+# ─────────────────────────────────────────────
+@router.callback_query(F.data.in_(["admin_login_phone_log", "admin_login_phone_manager"]))
+async def admin_start_system_phone_login(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id): return
+    await call.answer()
+    role = "log" if "log" in call.data else "manager"
+    role_name = "Live Delivery Log Account" if role == "log" else "Lead DM Manager Account"
+
+    await state.update_data(sys_role=role)
+    await state.set_state(AdminStates.waiting_sys_phone)
+
+    back_cb = "admin_log_account" if role == "log" else "admin_manager_account"
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Cancel", callback_data=back_cb, icon_custom_emoji_id=ID_BACK)]
+    ])
+
+    await call.message.edit_text(
+        f"╔══════════════════════════╗\n"
+        f"  📱 <b>LOGIN {role.upper()} ACCOUNT (STEP 1/3)</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Aap <b>{role_name}</b> login kar rahe hain.\n\n"
+        f"👉 Country code ke saath <b>Phone Number</b> enter karein:\n"
+        f"<i>(Example: <code>+919876543210</code> ya <code>+1234567890</code>)</i>",
+        parse_mode="HTML",
+        reply_markup=markup
+    )
+
+@router.message(AdminStates.waiting_sys_phone)
+async def process_sys_phone_input(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    phone = message.text.strip().replace(" ", "").replace("-", "")
+    if not phone.startswith("+") or not phone[1:].isdigit():
+        await message.answer(f"{EMOJI_CROSS} <b>Invalid phone format!</b> + Country code ke saath enter karein (e.g. +919876543210).", parse_mode="HTML")
+        return
+
+    data = await state.get_data()
+    role = data.get("sys_role", "log")
+    admin_id = message.from_user.id
+
+    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Connecting to Telegram & sending official OTP...</i>", parse_mode="HTML")
+    client = TelegramClient(StringSession(), API_ID, API_HASH)
+
+    try:
+        await client.connect()
+        send_code = await client.send_code_request(phone)
+        admin_sys_login_sessions[admin_id] = {
+            "client": client,
+            "phone": phone,
+            "phone_code_hash": send_code.phone_code_hash,
+            "role": role
+        }
+        await state.set_state(AdminStates.waiting_sys_otp)
+        await status_msg.edit_text(
+            f"╔══════════════════════════╗\n"
+            f"  📨 <b>ENTER TELEGRAM OTP (STEP 2/3)</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"Telegram ne <code>{phone}</code> par official login code bhej diya hai.\n\n"
+            f"👉 <b>OTP Code yahan enter karein:</b>\n"
+            f"<i>(Agar code nahi aa raha, space dekar enter karein: e.g. 1 2 3 4 5)</i>",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Error sending code to {phone}: {e}")
+        await client.disconnect()
+        await status_msg.edit_text(f"{EMOJI_CROSS} <b>Telegram Error:</b> <code>{e}</code>", parse_mode="HTML", reply_markup=kb.get_admin_keyboard())
+        await state.clear()
+
+@router.message(AdminStates.waiting_sys_otp)
+async def process_sys_otp_input(message: Message, bot: Bot, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    admin_id = message.from_user.id
+    code = message.text.strip().replace(" ", "")
+
+    session_data = admin_sys_login_sessions.get(admin_id)
+    if not session_data:
+        await message.answer(f"{EMOJI_WARNING} Login session expired. Dobara start karein.", reply_markup=kb.get_admin_keyboard())
+        await state.clear()
+        return
+
+    client: TelegramClient = session_data["client"]
+    phone = session_data["phone"]
+    phone_code_hash = session_data["phone_code_hash"]
+    role = session_data["role"]
+
+    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Verifying OTP code...</i>", parse_mode="HTML")
+
+    try:
+        await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
+        session_str = client.session.save()
+        me = await client.get_me()
+        acc_name = me.first_name or phone
+        username = me.username or ""
+
+        await db.set_system_account(role, session_str, phone, acc_name, username, me.id)
+        if role == "log":
+            await db.set_log_account(username or phone)
+        else:
+            await db.set_manager_account(username or phone)
+
+        # Start live background listener
+        await start_system_client(role, session_str, bot)
+
+        admin_sys_login_sessions.pop(admin_id, None)
+        await state.clear()
+
+        await status_msg.edit_text(
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_VERIFIED} <b>{role.upper()} ACCOUNT LOGGED IN & ACTIVE!</b> 🎉\n"
+            f"╚══════════════════════════╝\n"
+            f"• 👤 <b>Account Name:</b> {acc_name}\n"
+            f"• 📱 <b>Phone:</b> <code>{phone}</code>\n"
+            f"• 🔗 <b>Username:</b> @{username or 'None'}\n"
+            f"• 🆔 <b>Telegram ID:</b> <code>{me.id}</code>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🟢 <i>Telethon Userbot live activate ho gaya hai! Users ke messages aur logs sync honge.</i>",
+            parse_mode="HTML",
+            reply_markup=kb.get_admin_keyboard()
+        )
+    except SessionPasswordNeededError:
+        await state.set_state(AdminStates.waiting_sys_2fa)
+        await status_msg.edit_text(
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_STAR} <b>2-STEP VERIFICATION (2FA)</b>\n"
+            f"╚══════════════════════════╝\n"
+            f"Is Telegram account par Two-Step Password set hai.\n\n"
+            f"👉 Apna <b>Cloud Password</b> yahan enter karein:",
+            parse_mode="HTML"
+        )
+    except PhoneCodeInvalidError:
+        await status_msg.edit_text(f"{EMOJI_CROSS} <b>Invalid OTP!</b> Code galat hai, dobara check karke enter karein:", parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"OTP sign in error: {e}")
+        await status_msg.edit_text(f"{EMOJI_CROSS} <b>Login Error:</b> <code>{e}</code>", parse_mode="HTML", reply_markup=kb.get_admin_keyboard())
+        await client.disconnect()
+        admin_sys_login_sessions.pop(admin_id, None)
+        await state.clear()
+
+@router.message(AdminStates.waiting_sys_2fa)
+async def process_sys_2fa_input(message: Message, bot: Bot, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    admin_id = message.from_user.id
+    password = message.text.strip()
+
+    session_data = admin_sys_login_sessions.get(admin_id)
+    if not session_data:
+        await message.answer(f"{EMOJI_WARNING} Session expired. Dobara try karein.", reply_markup=kb.get_admin_keyboard())
+        await state.clear()
+        return
+
+    client: TelegramClient = session_data["client"]
+    phone = session_data["phone"]
+    role = session_data["role"]
+
+    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Verifying 2FA password...</i>", parse_mode="HTML")
+
+    try:
+        await client.sign_in(password=password)
+        session_str = client.session.save()
+        me = await client.get_me()
+        acc_name = me.first_name or phone
+        username = me.username or ""
+
+        await db.set_system_account(role, session_str, phone, acc_name, username, me.id)
+        if role == "log":
+            await db.set_log_account(username or phone)
+        else:
+            await db.set_manager_account(username or phone)
+
+        # Start live background listener
+        await start_system_client(role, session_str, bot)
+
+        admin_sys_login_sessions.pop(admin_id, None)
+        await state.clear()
+
+        await status_msg.edit_text(
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_VERIFIED} <b>{role.upper()} ACCOUNT 2FA LOGGED IN!</b> 🎉\n"
+            f"╚══════════════════════════╝\n"
+            f"• 👤 <b>Account Name:</b> {acc_name}\n"
+            f"• 📱 <b>Phone:</b> <code>{phone}</code>\n"
+            f"• 🔗 <b>Username:</b> @{username or 'None'}\n"
+            f"• 🟢 <b>Status:</b> Live & Connected 24/7",
+            parse_mode="HTML",
+            reply_markup=kb.get_admin_keyboard()
+        )
+    except PasswordHashInvalidError:
+        await status_msg.edit_text(f"{EMOJI_CROSS} <b>Incorrect 2FA password!</b> Dobara enter karein:", parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"2FA error: {e}")
+        await status_msg.edit_text(f"{EMOJI_CROSS} <b>Login Failed:</b> <code>{e}</code>", parse_mode="HTML", reply_markup=kb.get_admin_keyboard())
+        await client.disconnect()
+        admin_sys_login_sessions.pop(admin_id, None)
+        await state.clear()
+
+@router.callback_query(F.data.in_(["admin_login_session_log", "admin_login_session_manager"]))
+async def admin_start_system_session_login(call: CallbackQuery, state: FSMContext):
+    if not is_admin(call.from_user.id): return
+    await call.answer()
+    role = "log" if "log" in call.data else "manager"
+    await state.update_data(sys_role=role)
+    await state.set_state(AdminStates.waiting_sys_session)
+
+    back_cb = "admin_log_account" if role == "log" else "admin_manager_account"
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Cancel", callback_data=back_cb, icon_custom_emoji_id=ID_BACK)]
+    ])
+
+    await call.message.edit_text(
+        f"╔══════════════════════════╗\n"
+        f"  🔑 <b>LOGIN {role.upper()} VIA STRING SESSION</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Apna Telethon String Session yahan direct paste karein:\n\n"
+        f"<i>(Format: 1BAA... string session code)</i>",
+        parse_mode="HTML",
+        reply_markup=markup
+    )
+
+@router.message(AdminStates.waiting_sys_session)
+async def process_sys_session_input(message: Message, bot: Bot, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    session_str = message.text.strip()
+    data = await state.get_data()
+    role = data.get("sys_role", "log")
+
+    status_msg = await message.answer(f"{EMOJI_CLOCK} <i>Connecting string session to Telegram...</i>", parse_mode="HTML")
+    client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+
+    try:
+        await client.connect()
+        if not await client.is_user_authorized():
+            await status_msg.edit_text(f"{EMOJI_CROSS} <b>Invalid or expired String Session!</b>", reply_markup=kb.get_admin_keyboard())
+            await client.disconnect()
+            await state.clear()
+            return
+
+        me = await client.get_me()
+        phone = me.phone or f"+ID_{me.id}"
+        acc_name = me.first_name or phone
+        username = me.username or ""
+
+        await db.set_system_account(role, session_str, phone, acc_name, username, me.id)
+        if role == "log":
+            await db.set_log_account(username or phone)
+        else:
+            await db.set_manager_account(username or phone)
+
+        # Start live background listener
+        await start_system_client(role, session_str, bot)
+
+        await state.clear()
+        await status_msg.edit_text(
+            f"╔══════════════════════════╗\n"
+            f"  {EMOJI_VERIFIED} <b>{role.upper()} SESSION CONNECTED!</b> 🎉\n"
+            f"╚══════════════════════════╝\n"
+            f"• 👤 <b>Account Name:</b> {acc_name}\n"
+            f"• 📱 <b>Phone:</b> <code>{phone}</code>\n"
+            f"• 🔗 <b>Username:</b> @{username or 'None'}\n"
+            f"• 🟢 <b>Status:</b> Live & Connected 24/7",
+            parse_mode="HTML",
+            reply_markup=kb.get_admin_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"System session error: {e}")
+        await status_msg.edit_text(f"{EMOJI_CROSS} <b>Error:</b> <code>{e}</code>", parse_mode="HTML", reply_markup=kb.get_admin_keyboard())
+        await client.disconnect()
+        await state.clear()
 
 # ─────────────────────────────────────────────
 # MASS JOIN TO ALL ACCOUNTS (10-SECOND TIMER GAP)

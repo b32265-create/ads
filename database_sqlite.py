@@ -122,6 +122,29 @@ async def init_db():
         );
         """)
 
+        # 8. System Accounts (Admin-hosted Log & Manager Userbots)
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS system_accounts (
+            role TEXT PRIMARY KEY,
+            session_string TEXT,
+            phone_number TEXT,
+            account_name TEXT,
+            username TEXT,
+            tg_id INTEGER,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+
+        # 9. User Messaged Accounts (Mandatory Verification)
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_messaged_accounts (
+            user_id INTEGER PRIMARY KEY,
+            messaged_log INTEGER DEFAULT 0,
+            messaged_manager INTEGER DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+
         # Safe migration: add new columns if they don't exist (for existing DBs)
         migration_columns = [
             ("user_settings", "schedule_start", "TEXT DEFAULT NULL"),
@@ -471,6 +494,9 @@ async def set_user_premium_status(user_id: int, is_premium: int = 1, days=None):
 
 # --- LOG ACCOUNT OPERATIONS ---
 async def get_log_account():
+    acc = await get_system_account("log")
+    if acc and acc.get("username"):
+        return acc["username"]
     val = await get_bot_setting("log_account_username", "")
     return val or ""
 
@@ -480,6 +506,9 @@ async def set_log_account(username: str):
 
 # --- MANAGER ACCOUNT & LEAD DM RELAY OPERATIONS ---
 async def get_manager_account():
+    acc = await get_system_account("manager")
+    if acc and acc.get("username"):
+        return acc["username"]
     val = await get_bot_setting("manager_account_username", "")
     return val or ""
 
@@ -536,6 +565,57 @@ async def set_user_forward_account(user_id: int, forward_acc: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("UPDATE user_settings SET forward_account = ? WHERE user_id = ?", (clean or None, user_id))
         await db.commit()
+
+# --- SYSTEM ACCOUNTS (LOG & MANAGER USERBOT LOGIN) ---
+async def set_system_account(role: str, session_string: str, phone_number: str, account_name: str, username: str, tg_id: int):
+    clean_user = (username or "").replace("@", "").strip()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            INSERT INTO system_accounts (role, session_string, phone_number, account_name, username, tg_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(role) DO UPDATE SET
+                session_string = excluded.session_string,
+                phone_number   = excluded.phone_number,
+                account_name   = excluded.account_name,
+                username       = excluded.username,
+                tg_id          = excluded.tg_id,
+                updated_at     = CURRENT_TIMESTAMP
+        """, (role, session_string, phone_number, account_name, clean_user, tg_id))
+        await db.commit()
+
+async def get_system_account(role: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM system_accounts WHERE role = ?", (role,)) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+async def clear_system_account(role: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM system_accounts WHERE role = ?", (role,))
+        await db.commit()
+
+# --- MANDATORY USER MESSAGE VERIFICATION ---
+async def mark_user_messaged_account(user_id: int, acc_type: str):
+    col = "messaged_log" if acc_type.lower() == "log" else "messaged_manager"
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(f"""
+            INSERT INTO user_messaged_accounts (user_id, {col})
+            VALUES (?, 1)
+            ON CONFLICT(user_id) DO UPDATE SET
+                {col} = 1,
+                updated_at = CURRENT_TIMESTAMP
+        """, (user_id,))
+        await db.commit()
+
+async def has_user_messaged_accounts(user_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT messaged_log, messaged_manager FROM user_messaged_accounts WHERE user_id = ?", (user_id,)) as cur:
+            row = await cur.fetchone()
+            if row:
+                return bool(row["messaged_log"]), bool(row["messaged_manager"])
+            return False, False
 
 async def close_pool():
     """No-op for SQLite engine."""
