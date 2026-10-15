@@ -273,6 +273,7 @@ async def scan_and_save_group_leads(
 
     total_new_saved = 0
     scanned_groups = set()
+    seen_in_scan = set()
 
     for acc in accounts:
         session_str = acc.get("session_string")
@@ -291,8 +292,9 @@ async def scan_and_save_group_leads(
             if not await client.is_user_authorized():
                 continue
 
-            async for dialog in client.iter_dialogs(limit=50):
-                if not dialog.is_group:
+            async for dialog in client.iter_dialogs(limit=100):
+                is_grp = dialog.is_group or (dialog.is_channel and getattr(dialog.entity, "megagroup", False))
+                if not is_grp:
                     continue
 
                 group_id_str = str(dialog.id)
@@ -322,11 +324,12 @@ async def scan_and_save_group_leads(
                             if not any(kw in msg_lower for kw in kw_filters):
                                 continue
 
-                        sender = None
-                        try:
-                            sender = await msg.get_sender()
-                        except Exception:
-                            sender = getattr(msg, "sender", None)
+                        sender = getattr(msg, "sender", None)
+                        if not sender:
+                            try:
+                                sender = await msg.get_sender()
+                            except Exception:
+                                pass
 
                         if not sender or not is_eligible_lead_user(sender):
                             continue
@@ -334,6 +337,12 @@ async def scan_and_save_group_leads(
                         uname = getattr(sender, "username", "") or ""
                         first_name = (getattr(sender, "first_name", "") or "") + " " + (getattr(sender, "last_name", "") or "")
                         lead_id_str = str(sender.id)
+
+                        # Deduplicate in-memory across the scan batch
+                        scan_key = (uname.lower() if uname else "", lead_id_str)
+                        if scan_key in seen_in_scan:
+                            continue
+                        seen_in_scan.add(scan_key)
 
                         # Must have at least a username or a valid numeric ID
                         if uname or lead_id_str:
@@ -367,7 +376,8 @@ async def dispatch_single_account_autodm(
     acc: dict,
     settings: dict,
     local_media: Optional[str] = None,
-    round_quota: int = 2
+    round_quota: int = 2,
+    check_enabled: bool = True
 ) -> Tuple[int, int]:
     """
     Sends direct messages from one account for this 10-minute round.
@@ -412,9 +422,10 @@ async def dispatch_single_account_autodm(
             candidate_leads = db_leads
 
         for lead in candidate_leads:
-            c_chk = await db.get_user_settings(user_id)
-            if not c_chk.get("autodm_enabled", 0):
-                break
+            if check_enabled:
+                c_chk = await db.get_user_settings(user_id)
+                if not c_chk.get("autodm_enabled", 0):
+                    break
             if sent_count >= round_quota:
                 break
 
@@ -572,11 +583,10 @@ async def run_user_autodm_campaign(bot: Bot, user_id: int):
             # STEP 1: Scan 500 new messages from groups and save usernames
             new_scraped_count = 0
             mode = settings.get("autodm_target_mode", "groups")
-            if mode == "groups":
-                try:
-                    new_scraped_count = await scan_and_save_group_leads(user_id, accounts, settings, max_messages=500)
-                except Exception as sc_err:
-                    logger.error(f"Error scanning group leads for user {user_id}: {sc_err}")
+            try:
+                new_scraped_count = await scan_and_save_group_leads(user_id, accounts, settings, max_messages=500)
+            except Exception as sc_err:
+                logger.error(f"Error scanning group leads for user {user_id}: {sc_err}")
 
             # STEP 2: Send DMs from all accounts in parallel
             tasks = [
@@ -1125,15 +1135,17 @@ async def btn_autodm_send_now(call: CallbackQuery, bot: Bot):
 
     async def run_manual_batch():
         new_scraped = 0
-        mode = settings.get("autodm_target_mode", "groups")
-        if mode == "groups":
-            try:
-                new_scraped = await scan_and_save_group_leads(user_id, accounts, settings, max_messages=500)
-            except Exception as e:
-                logger.error(f"Manual scan error: {e}")
+        current_st = await db.get_user_settings(user_id)
+        mode = current_st.get("autodm_target_mode", "groups")
+        
+        # In manual trigger, we always scan groups to save new 500-message leads into DB pool
+        try:
+            new_scraped = await scan_and_save_group_leads(user_id, accounts, current_st, max_messages=500)
+        except Exception as e:
+            logger.error(f"Manual scan error: {e}")
 
         tasks = [
-            dispatch_single_account_autodm(bot, user_id, acc, settings, local_media, round_quota)
+            dispatch_single_account_autodm(bot, user_id, acc, current_st, local_media, round_quota, check_enabled=False)
             for acc in accounts
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1141,10 +1153,16 @@ async def btn_autodm_send_now(call: CallbackQuery, bot: Bot):
         f_total = sum(r[1] for r in results if isinstance(r, tuple))
         leads_stats = await db.get_scraped_leads_stats(user_id)
 
+        mode_text = "Group 500 Msgs (Auto-Scrape)" if mode == "groups" else "Custom Target List"
+        kw_text = current_st.get("autodm_keywords", "")
+        kw_line = f"• 🔍 <b>Word Filter:</b> <code>{kw_text}</code>\n" if kw_text else "• 🔍 <b>Word Filter:</b> <i>None (All active chatters)</i>\n"
+
         try:
             await bot.send_message(
                 user_id,
                 f"✅ <b>Manual Batch Completed!</b>\n\n"
+                f"• 🎯 <b>Targeting Mode:</b> <code>{mode_text}</code>\n"
+                f"{kw_line}"
                 f"• 📥 <b>New Usernames Saved:</b> <code>+{new_scraped} Leads</code>\n"
                 f"• 👥 <b>Total Saved in DB:</b> <code>{leads_stats['total']} Leads</code> (<code>{leads_stats['pending']}</code> Pending)\n"
                 f"• 📤 <b>Sent This Batch:</b> <code>{s_total} DMs</code>\n"
