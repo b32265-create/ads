@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from typing import Dict, Optional
+from typing import Dict, Optional, Set, Tuple
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from aiogram import Bot
@@ -16,6 +16,9 @@ _ACTIVE_CLIENTS: Dict[int, TelegramClient] = {}
 
 # Fast in-memory lookup for reply mapping: (user_id, bot_message_id) -> dict(account_id, lead_id, alt_username, lead_name)
 _REPLY_CACHE: Dict[str, dict] = {}
+
+# Set of leads that have received an automated response: (user_id, lead_id)
+_AUTOREPLIED_LEADS: Set[Tuple[int, int]] = set()
 
 
 def get_active_client(account_id: int) -> Optional[TelegramClient]:
@@ -102,6 +105,27 @@ async def start_account_dm_listener(account_dict: dict, bot: Bot):
                 except Exception as e:
                     logger.warning(f"Could not forward message to main account {forward_acc}: {e}")
 
+            # Check if customer has an Auto-Response configured for incoming leads
+            user_settings = await db.get_user_settings(user_id)
+            auto_reply_text = user_settings.get("autodm_auto_reply")
+            auto_replied_now = False
+
+            if auto_reply_text and (user_id, lead_id) not in _AUTOREPLIED_LEADS:
+                _AUTOREPLIED_LEADS.add((user_id, lead_id))
+                try:
+                    await asyncio.sleep(2)
+                    await event.reply(auto_reply_text, parse_mode="html")
+                    auto_replied_now = True
+                    logger.info(f"Auto-replied to lead {lead_id} from alt @{alt_username}")
+                except Exception:
+                    try:
+                        await event.reply(auto_reply_text)
+                        auto_replied_now = True
+                    except Exception as ar_err:
+                        logger.warning(f"Could not send auto-reply to lead {lead_id}: {ar_err}")
+
+            auto_reply_status = f"🤖 <b>Auto-Response:</b> <i>Lead ko auto-reply bhej diya gaya ✅</i>\n━━━━━━━━━━━━━━━━━━━━━\n" if auto_replied_now else ""
+
             # 2. Build interactive message for Customer in the Bot
             lead_user_link = f"@{lead_username}" if lead_username else f"<a href='tg://user?id={lead_id}'>{lead_name}</a>"
             notify_text = (
@@ -114,6 +138,7 @@ async def start_account_dm_listener(account_dict: dict, bot: Bot):
                 f"📝 <b>Message:</b>\n"
                 f"<blockquote>{text}</blockquote>\n"
                 f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"{auto_reply_status}"
                 f"↩️ <b>Reply Kaise Karein:</b>\n"
                 f"<i>Aap bas <b>is message par Reply / Tag</b> karein apna message likh kar — aapka jawab direct @{alt_username} se is lead ko chala jayega!</i>"
             )

@@ -250,6 +250,10 @@ def get_autodm_keyboard(
             InlineKeyboardButton(text="Set Target Leads", callback_data="set_autodm_targets", icon_custom_emoji_id=ID_USER),
         ],
         [
+            InlineKeyboardButton(text="Set Keywords (Word Filter)", callback_data="set_autodm_keywords", icon_custom_emoji_id=ID_STAR),
+            InlineKeyboardButton(text="Set Auto-Reply", callback_data="set_autodm_autoreply", icon_custom_emoji_id=ID_FLASH),
+        ],
+        [
             InlineKeyboardButton(text="Send 1-Hr Batch Now", callback_data="autodm_send_now", icon_custom_emoji_id=ID_ROCKET),
             InlineKeyboardButton(text="Reset Leads DB", callback_data="autodm_reset_leads", icon_custom_emoji_id=ID_TRASH),
         ],
@@ -261,18 +265,18 @@ def get_autodm_keyboard(
 
 
 def get_autodm_rate_keyboard() -> InlineKeyboardMarkup:
-    """Pre-set hourly limits for Auto DM."""
+    """Pre-set hourly limits for Auto DM (Strictly capped at max 10/hr)."""
     keyboard = [
         [
-            InlineKeyboardButton(text="5 DMs / hr", callback_data="autodm_rate_5", icon_custom_emoji_id=ID_INTERVAL),
-            InlineKeyboardButton(text="10 DMs / hr (Safe)", callback_data="autodm_rate_10", icon_custom_emoji_id=ID_VERIFIED),
+            InlineKeyboardButton(text="3 DMs / hr (Stealth)", callback_data="autodm_rate_3", icon_custom_emoji_id=ID_INTERVAL),
+            InlineKeyboardButton(text="5 DMs / hr (Safe)", callback_data="autodm_rate_5", icon_custom_emoji_id=ID_INTERVAL),
         ],
         [
-            InlineKeyboardButton(text="15 DMs / hr", callback_data="autodm_rate_15", icon_custom_emoji_id=ID_FLASH),
-            InlineKeyboardButton(text="20 DMs / hr (Fast)", callback_data="autodm_rate_20", icon_custom_emoji_id=ID_FIRE),
+            InlineKeyboardButton(text="8 DMs / hr", callback_data="autodm_rate_8", icon_custom_emoji_id=ID_FLASH),
+            InlineKeyboardButton(text="10 DMs / hr (Max Safe Limit)", callback_data="autodm_rate_10", icon_custom_emoji_id=ID_VERIFIED),
         ],
         [
-            InlineKeyboardButton(text="Custom Hourly Rate", callback_data="autodm_rate_custom", icon_custom_emoji_id=ID_STAR),
+            InlineKeyboardButton(text="Custom Rate (Max 10)", callback_data="autodm_rate_custom", icon_custom_emoji_id=ID_STAR),
         ],
         [
             InlineKeyboardButton(text="Back to Auto DM", callback_data="auto_dm_menu", icon_custom_emoji_id=ID_BACK)
