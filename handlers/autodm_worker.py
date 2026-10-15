@@ -176,9 +176,9 @@ def clean_html_preview(text: str, max_chars: int = 80) -> str:
 def get_autodm_dashboard_text(settings: dict, accounts_count: int, scraped_stats: dict = None) -> str:
     scraped_stats = scraped_stats or {"total": 0, "pending": 0, "contacted": 0}
     enabled = bool(settings.get("autodm_enabled", 0))
-    status_disp = f"🟢 <b>ACTIVE & SCANNING (Every 10 Mins)</b>" if enabled else f"🔴 <b>PAUSED / IDLE</b>"
-    rate = int(settings.get("autodm_rate_per_hour", 10) or 10)
-    per_10m = max(1, round(rate / 6))
+    interval = int(settings.get("autodm_interval_minutes", 5) or 5)
+    rate_round = int(settings.get("autodm_rate_per_round", 1) or 1)
+    status_disp = f"🟢 <b>ACTIVE & SCANNING (Every {interval} Mins)</b>" if enabled else f"🔴 <b>PAUSED / IDLE</b>"
     mode = settings.get("autodm_target_mode", "groups")
     mode_disp = "Group 500 Msgs (Auto-Scrape & Save)" if mode == "groups" else "Custom Target List"
     
@@ -205,13 +205,13 @@ def get_autodm_dashboard_text(settings: dict, accounts_count: int, scraped_stats
 
     return (
         f"╔══════════════════════════╗\n"
-        f"  ⚡ <b>10-MINUTE AUTO DM & LEAD ENGINE</b> 🐲\n"
+        f"  ⚡ <b>5-MINUTE AUTO DM & LEAD ENGINE</b> 🐲\n"
         f"╚══════════════════════════╝\n"
-        f"Har 10 minute me groups ke <b>new 500 messages scan</b> karke active usernames ko automatically database me save aur direct DM deliver karne ka system.\n\n"
+        f"Har 5 minute me groups ke <b>new 500 messages scan</b> karke active usernames ko database me save aur <b>sabhi connected accounts</b> se direct DMs deliver karne ka system.\n\n"
         f"📊 <b>AUTO DM CONFIGURATION & STATUS</b>\n"
-        f"┌ 📱 <b>Hosted Accounts:</b> <code>{accounts_count} Active</code>\n"
-        f"├ ⏱ <b>Scan & DM Cycle:</b> <code>Every 10 Minutes</code>\n"
-        f"├ 🚀 <b>Delivery Speed:</b> <code>~{per_10m} DMs / 10m (~{rate}/hr per acc)</code>\n"
+        f"┌ 📱 <b>Hosted Accounts:</b> <code>{accounts_count} Senders (All Active)</code>\n"
+        f"├ ⏱ <b>Scan & DM Cycle:</b> <code>Every {interval} Minutes</code>\n"
+        f"├ 🚀 <b>Delivery Speed:</b> <code>{rate_round} DM / {interval}m per account</code>\n"
         f"├ 🎯 <b>Targeting Mode:</b> <code>{mode_disp}</code>\n"
         f"├ 📥 <b>Saved Usernames Pool:</b> {leads_info}\n"
         f"├ 🔍 <b>Word / Keyword Filter:</b> {kw_disp}\n"
@@ -222,8 +222,8 @@ def get_autodm_dashboard_text(settings: dict, accounts_count: int, scraped_stats
         f"└ {status_disp}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"🛡️ <b>Anti-Duplicate:</b> <code>100% Lifetime Protection (Zero Repeat DMs)</code>\n"
-        f"🔄 <b>Auto-Scan:</b> <code>Scans 500 new msgs every 10 mins & saves usernames</code>\n"
-        f"👥 <b>Active Leads:</b> <code>Recent chatters from active groups</code>"
+        f"🔄 <b>Auto-Scan:</b> <code>Scans 500 new msgs every {interval} mins & saves usernames</code>\n"
+        f"👥 <b>Multi-Account:</b> <code>Har 5m me aapke sabhi accounts se alag-alag leads ko message</code>"
     )
 
 
@@ -376,12 +376,13 @@ async def dispatch_single_account_autodm(
     acc: dict,
     settings: dict,
     local_media: Optional[str] = None,
-    round_quota: int = 2,
-    check_enabled: bool = True
+    round_quota: int = 1,
+    check_enabled: bool = True,
+    assigned_leads: Optional[List[dict]] = None
 ) -> Tuple[int, int]:
     """
-    Sends direct messages from one account for this 10-minute round.
-    Pulls from scraped leads pool or custom target list.
+    Sends direct messages from one account for this 5-minute round.
+    Pulls from assigned leads, scraped leads pool, or custom target list.
     """
     session_str = acc.get("session_string")
     if not session_str:
@@ -409,7 +410,9 @@ async def dispatch_single_account_autodm(
 
         # Fetch candidate leads
         candidate_leads = []
-        if mode == "custom_list":
+        if assigned_leads is not None:
+            candidate_leads = assigned_leads
+        elif mode == "custom_list":
             raw_targets = settings.get("autodm_custom_targets", "") or ""
             targets = [x.strip() for x in raw_targets.replace(",", "\n").split("\n") if x.strip()]
             for t in targets:
@@ -486,9 +489,10 @@ async def dispatch_single_account_autodm(
                     except Exception:
                         pass
 
-                # Anti-flood sleep (20-30s)
-                sleep_dur = random.randint(20, 30)
-                await asyncio.sleep(sleep_dur)
+                # Anti-flood sleep (20-30s) if sending more leads in this round
+                if sent_count < round_quota:
+                    sleep_dur = random.randint(20, 30)
+                    await asyncio.sleep(sleep_dur)
 
             except PeerFloodError:
                 logger.warning(f"PeerFlood on account {acc_name}. Backing off for this round.")
@@ -560,9 +564,9 @@ async def run_user_autodm_campaign(bot: Bot, user_id: int):
                 )
                 break
 
-            # Rate per 10-minute round per account (e.g., 12/hr = 2 per 10m round)
-            hourly_rate = int(settings.get("autodm_rate_per_hour", 10) or 10)
-            round_quota = max(1, round(hourly_rate / 6))
+            # Rate and interval per account (default 1 DM every 5 mins per account)
+            interval_mins = int(settings.get("autodm_interval_minutes", 5) or 5)
+            round_quota = int(settings.get("autodm_rate_per_round", 1) or 1)
 
             # Local media caching
             local_media = None
@@ -588,11 +592,27 @@ async def run_user_autodm_campaign(bot: Bot, user_id: int):
             except Exception as sc_err:
                 logger.error(f"Error scanning group leads for user {user_id}: {sc_err}")
 
-            # STEP 2: Send DMs from all accounts in parallel
-            tasks = [
-                dispatch_single_account_autodm(bot, user_id, acc, settings, local_media, round_quota)
-                for acc in accounts
-            ]
+            # STEP 2: Fetch and distribute leads across ALL accounts
+            lead_pool = []
+            if mode == "custom_list":
+                raw_targets = settings.get("autodm_custom_targets", "") or ""
+                targets = [x.strip() for x in raw_targets.replace(",", "\n").split("\n") if x.strip()]
+                lead_pool = [{"username": t.lstrip("@").strip(), "lead_id": ""} for t in targets if t.strip()]
+            else:
+                total_needed = max(50, len(accounts) * round_quota * 4)
+                lead_pool = await db.get_pending_scraped_leads(user_id, limit=total_needed)
+
+            # Assign distinct leads to each account so ALL accounts send their DMs!
+            tasks = []
+            num_accs = len(accounts)
+            for idx, acc in enumerate(accounts):
+                acc_assigned_leads = [lead_pool[i] for i in range(idx, len(lead_pool), num_accs)]
+                tasks.append(
+                    dispatch_single_account_autodm(
+                        bot, user_id, acc, settings, local_media, round_quota,
+                        check_enabled=True, assigned_leads=acc_assigned_leads
+                    )
+                )
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             total_sent_this_round = 0
@@ -611,19 +631,22 @@ async def run_user_autodm_campaign(bot: Bot, user_id: int):
 
                 await bot.send_message(
                     user_id,
-                    f"⚡ <b>10-Minute Auto DM & Scan Round Completed!</b>\n\n"
+                    f"⚡ <b>{interval_mins}-Minute Auto DM & Scan Round Completed!</b>\n\n"
                     f"{scrape_line}"
                     f"{pool_line}"
+                    f"• 📱 <b>Active Accounts:</b> <code>{len(accounts)} Senders</code>\n"
                     f"• {EMOJI_VERIFIED} <b>DMs Sent This Round:</b> <code>{total_sent_this_round} DMs</code>\n"
                     f"• {EMOJI_CROSS} <b>Skipped / Privacy:</b> <code>{total_fail_this_round}</code>\n"
-                    f"• {EMOJI_CLOCK} Agli round theek <b>10 minutes</b> baad new 500 messages scan karke shuru hogi...",
+                    f"• {EMOJI_CLOCK} Agli round theek <b>{interval_mins} minutes</b> baad new 500 messages scan karke shuru hogi...",
                     parse_mode="HTML"
                 )
             except Exception:
                 pass
 
-            # Sleep 10 minutes (600 seconds) with responsive cancellation check
-            for _ in range(120): # 120 x 5s = 600s = 10 mins
+            # Sleep interval_mins (e.g. 5 minutes = 300 seconds) with responsive cancellation check
+            sleep_total = max(30, interval_mins * 60)
+            sleep_steps = sleep_total // 5
+            for _ in range(sleep_steps):
                 await asyncio.sleep(5)
                 c_chk = await db.get_user_settings(user_id)
                 if not c_chk or not c_chk.get("autodm_enabled", 0):
@@ -825,11 +848,10 @@ async def btn_set_autodm_rate(call: CallbackQuery):
         f"╔══════════════════════════╗\n"
         f"  ⏱ <b>SET AUTO DM RATE LIMIT</b>\n"
         f"╚══════════════════════════╝\n"
-        f"Har 10 minute me accounts se kitne DMs send karne hain select karein:\n\n"
-        f"• <b>1 DM / 10m (~6/hr):</b> Stealth & Ultra-Safe\n"
-        f"• <b>2 DMs / 10m (~12/hr):</b> Recommended & Fast\n"
-        f"• <b>3 DMs / 10m (~18/hr):</b> High Output\n"
-        f"• <b>5 DMs / 10m (~30/hr):</b> Turbo (Purane Warm-up Accounts)\n"
+        f"Har 5 minute me accounts se kitne DMs send karne hain select karein:\n\n"
+        f"• <b>1 DM / 5m (~12/hr):</b> Safest & Recommended (Zero Ban Risk)\n"
+        f"• <b>2 DMs / 5m (~24/hr):</b> Fast Output (Warmed-up Accounts)\n"
+        f"• <b>3 DMs / 5m (~36/hr):</b> Turbo Output\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"👉 Select rate below:"
     )
@@ -852,8 +874,11 @@ async def btn_select_autodm_rate(call: CallbackQuery, state: FSMContext, bot: Bo
 
     try:
         rate = int(val)
+        per_round = max(1, round(rate / 12))
         await db.update_user_setting(user_id, "autodm_rate_per_hour", rate)
-        await call.answer(f"✅ Rate set to ~{rate} DMs/hour!")
+        await db.update_user_setting(user_id, "autodm_rate_per_round", per_round)
+        await db.update_user_setting(user_id, "autodm_interval_minutes", 5)
+        await call.answer(f"✅ Rate set: {per_round} DM / 5m (~{rate}/hr)!")
     except Exception:
         pass
 
@@ -1121,14 +1146,13 @@ async def btn_autodm_send_now(call: CallbackQuery, bot: Bot):
     await call.answer("🚀 500 Messages Scan aur DM dispatch shuru ho raha hai...")
     await bot.send_message(
         call.message.chat.id,
-        f"🚀 <b>Manual 10-Min Scan & DM Batch Started!</b>\n\n"
+        f"🚀 <b>Manual 5-Min Scan & DM Batch Started!</b>\n\n"
         f"1. Groups ke 500 new messages scan karke usernames save kiye ja rahe hain...\n"
-        f"2. Sabhi {len(accounts)} accounts se targeted DMs dispatch ho rahe hain...",
+        f"2. Sabhi {len(accounts)} accounts se alag-alag leads ko targeted DMs dispatch ho rahe hain...",
         parse_mode="HTML"
     )
 
-    hourly_rate = int(settings.get("autodm_rate_per_hour", 10) or 10)
-    round_quota = max(1, round(hourly_rate / 6))
+    round_quota = int(settings.get("autodm_rate_per_round", 1) or 1)
     local_media = None
     if dm_media and os.path.exists(dm_media):
         local_media = dm_media
@@ -1144,10 +1168,26 @@ async def btn_autodm_send_now(call: CallbackQuery, bot: Bot):
         except Exception as e:
             logger.error(f"Manual scan error: {e}")
 
-        tasks = [
-            dispatch_single_account_autodm(bot, user_id, acc, current_st, local_media, round_quota, check_enabled=False)
-            for acc in accounts
-        ]
+        # Partition leads among accounts so ALL accounts send their DMs!
+        lead_pool = []
+        if mode == "custom_list":
+            raw_targets = current_st.get("autodm_custom_targets", "") or ""
+            targets = [x.strip() for x in raw_targets.replace(",", "\n").split("\n") if x.strip()]
+            lead_pool = [{"username": t.lstrip("@").strip(), "lead_id": ""} for t in targets if t.strip()]
+        else:
+            total_needed = max(50, len(accounts) * round_quota * 4)
+            lead_pool = await db.get_pending_scraped_leads(user_id, limit=total_needed)
+
+        tasks = []
+        num_accs = len(accounts)
+        for idx, acc in enumerate(accounts):
+            acc_assigned_leads = [lead_pool[i] for i in range(idx, len(lead_pool), num_accs)]
+            tasks.append(
+                dispatch_single_account_autodm(
+                    bot, user_id, acc, current_st, local_media, round_quota,
+                    check_enabled=False, assigned_leads=acc_assigned_leads
+                )
+            )
         results = await asyncio.gather(*tasks, return_exceptions=True)
         s_total = sum(r[0] for r in results if isinstance(r, tuple))
         f_total = sum(r[1] for r in results if isinstance(r, tuple))
@@ -1162,6 +1202,7 @@ async def btn_autodm_send_now(call: CallbackQuery, bot: Bot):
                 user_id,
                 f"✅ <b>Manual Batch Completed!</b>\n\n"
                 f"• 🎯 <b>Targeting Mode:</b> <code>{mode_text}</code>\n"
+                f"• 📱 <b>Active Senders:</b> <code>{len(accounts)} Accounts</code>\n"
                 f"{kw_line}"
                 f"• 📥 <b>New Usernames Saved:</b> <code>+{new_scraped} Leads</code>\n"
                 f"• 👥 <b>Total Saved in DB:</b> <code>{leads_stats['total']} Leads</code> (<code>{leads_stats['pending']}</code> Pending)\n"

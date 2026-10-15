@@ -71,8 +71,8 @@ async def init_db():
             "autodm_total_failed INTEGER DEFAULT 0",
             "autodm_keywords TEXT DEFAULT ''",
             "autodm_auto_reply TEXT DEFAULT NULL",
-            "autodm_interval_minutes INTEGER DEFAULT 10",
-            "autodm_rate_per_round INTEGER DEFAULT 2"
+            "autodm_interval_minutes INTEGER DEFAULT 5",
+            "autodm_rate_per_round INTEGER DEFAULT 1"
         ]:
             try:
                 await db.execute(f"ALTER TABLE user_settings ADD COLUMN {col_def};")
@@ -366,7 +366,8 @@ async def update_user_setting(user_id: int, key: str, value):
         'autodm_enabled', 'autodm_message', 'autodm_media_id', 'autodm_media_type',
         'autodm_rate_per_hour', 'autodm_target_mode', 'autodm_custom_targets',
         'autodm_total_sent', 'autodm_total_failed',
-        'autodm_keywords', 'autodm_auto_reply'
+        'autodm_keywords', 'autodm_auto_reply',
+        'autodm_interval_minutes', 'autodm_rate_per_round'
     }
     if key not in allowed_keys:
         raise ValueError(f"Invalid setting key: {key}")

@@ -209,8 +209,8 @@ async def init_db():
         await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_total_failed INTEGER DEFAULT 0;")
         await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_keywords TEXT DEFAULT '';")
         await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_auto_reply TEXT DEFAULT NULL;")
-        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_interval_minutes INTEGER DEFAULT 10;")
-        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_rate_per_round INTEGER DEFAULT 2;")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_interval_minutes INTEGER DEFAULT 5;")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_rate_per_round INTEGER DEFAULT 1;")
 
         # 10. CONTACTED LEADS TABLE (Anti-spam / Anti-duplicate protection)
         await conn.execute("""
@@ -428,7 +428,8 @@ _ALLOWED_SETTING_KEYS = {
     'autodm_enabled', 'autodm_message', 'autodm_media_id', 'autodm_media_type',
     'autodm_rate_per_hour', 'autodm_target_mode', 'autodm_custom_targets',
     'autodm_total_sent', 'autodm_total_failed',
-    'autodm_keywords', 'autodm_auto_reply'
+    'autodm_keywords', 'autodm_auto_reply',
+    'autodm_interval_minutes', 'autodm_rate_per_round'
 }
 
 async def get_user_settings(user_id: int) -> Dict:

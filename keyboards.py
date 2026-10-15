@@ -234,7 +234,7 @@ def get_autodm_keyboard(
     pending_leads: int = 0
 ) -> InlineKeyboardMarkup:
     """Auto DM control keyboard with premium emoji icons."""
-    toggle_btn_text = "Stop Auto DM (10m Scan)" if enabled else "Start Auto DM (10m Scan)"
+    toggle_btn_text = "Stop Auto DM (5m Scan)" if enabled else "Start Auto DM (5m Scan)"
     toggle_icon = ID_PAUSED if enabled else ID_FIRE
     mode_text = "Target: Group 500 Msgs" if target_mode == "groups" else "Target: Custom List"
     leads_text = f"Saved Leads: {pending_leads} Ready" if pending_leads > 0 else "Saved Leads (0)"
@@ -268,17 +268,14 @@ def get_autodm_keyboard(
 
 
 def get_autodm_rate_keyboard() -> InlineKeyboardMarkup:
-    """Pre-set hourly limits for Auto DM (Scans 500 msgs every 10 minutes)."""
+    """Pre-set limits for Auto DM (Scans 500 msgs every 5 minutes)."""
     keyboard = [
         [
-            InlineKeyboardButton(text="1 DM / 10m (~6/hr Stealth)", callback_data="autodm_rate_6", icon_custom_emoji_id=ID_INTERVAL),
-            InlineKeyboardButton(text="2 DMs / 10m (~12/hr Safe)", callback_data="autodm_rate_12", icon_custom_emoji_id=ID_INTERVAL),
+            InlineKeyboardButton(text="1 DM / 5m (~12/hr Safest)", callback_data="autodm_rate_12", icon_custom_emoji_id=ID_INTERVAL),
+            InlineKeyboardButton(text="2 DMs / 5m (~24/hr Fast)", callback_data="autodm_rate_24", icon_custom_emoji_id=ID_INTERVAL),
         ],
         [
-            InlineKeyboardButton(text="3 DMs / 10m (~18/hr Fast)", callback_data="autodm_rate_18", icon_custom_emoji_id=ID_FLASH),
-            InlineKeyboardButton(text="5 DMs / 10m (~30/hr Turbo)", callback_data="autodm_rate_30", icon_custom_emoji_id=ID_VERIFIED),
-        ],
-        [
+            InlineKeyboardButton(text="3 DMs / 5m (~36/hr Turbo)", callback_data="autodm_rate_36", icon_custom_emoji_id=ID_FLASH),
             InlineKeyboardButton(text="Custom Rate / Hour", callback_data="autodm_rate_custom", icon_custom_emoji_id=ID_STAR),
         ],
         [
