@@ -12,7 +12,7 @@ from aiogram.types import TelegramObject, Message, CallbackQuery, ErrorEvent
 from typing import Callable, Dict, Any, Awaitable
 import database as db
 from emojis import EMOJI_WARNING
-from handlers import user, account, ads_worker, admin
+from handlers import user, account, ads_worker, admin, autodm_worker
 
 class MaintenanceMiddleware(BaseMiddleware):
     async def __call__(
@@ -116,6 +116,7 @@ async def main():
     dp.include_router(user.router)
     dp.include_router(account.router)
     dp.include_router(ads_worker.router)
+    dp.include_router(autodm_worker.router)
     dp.include_router(admin.router)
 
     # 3b. Global Error Handler (Prevents bot from silently ignoring users on unhandled errors)
@@ -152,6 +153,20 @@ async def main():
         asyncio.create_task(init_system_clients(bot))
     except Exception as e:
         logger.warning(f"Could not initialize system clients: {e}")
+
+    # 6c. Auto-resume active ad campaigns for users
+    try:
+        from handlers.ads_worker import resume_active_campaigns
+        asyncio.create_task(resume_active_campaigns(bot))
+    except Exception as e:
+        logger.warning(f"Could not auto-resume active campaigns: {e}")
+
+    # 6d. Auto-resume active Auto DM campaigns for users
+    try:
+        from handlers.autodm_worker import resume_active_autodm_campaigns
+        asyncio.create_task(resume_active_autodm_campaigns(bot))
+    except Exception as e:
+        logger.warning(f"Could not auto-resume active Auto DM campaigns: {e}")
 
     # 7. Start Polling
     try:

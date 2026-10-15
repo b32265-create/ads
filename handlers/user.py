@@ -126,6 +126,10 @@ def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict,
     mgr_enabled = settings.get("manager_enabled", 1)
     mgr_status = f"{EMOJI_VERIFIED} ON" if mgr_enabled else f"{EMOJI_PAUSED} OFF"
 
+    autodm_enabled = settings.get("autodm_enabled", 0)
+    autodm_rate = settings.get("autodm_rate_per_hour", 10)
+    autodm_status = f"{EMOJI_RUNNING} ON ({autodm_rate}/hr)" if autodm_enabled else f"{EMOJI_PAUSED} OFF"
+
     return (
         f"╔══════════════════════════╗\n"
         f"  {EMOJI_FIRE} <b>SHADOW ADS AUTOMATION</b> 🐲\n"
@@ -142,6 +146,7 @@ def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict,
         f"├ {EMOJI_MOON} <b>Progress Cycles:</b> <code>{cycles_done} / {max_c_str}</code>\n"
         f"├ {EMOJI_CLOCK} <b>Schedule Window:</b> <code>{sched_status}</code>\n"
         f"├ {EMOJI_USER} <b>Manager Account:</b> <code>{mgr_status}</code>\n"
+        f"├ {EMOJI_FLASH} <b>Auto DM (Hourly):</b> <code>{autodm_status}</code>\n"
         f"└ {status_display}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"💡 <i>Niche diye gaye control panel se action select karein:</i>"
@@ -482,18 +487,39 @@ async def process_ad_message(message: Message, bot: Bot, state: FSMContext):
     media_id = None
     media_type = None
 
+    os.makedirs("assets/ad_media", exist_ok=True)
     if message.photo:
-        media_id = str(message.photo[-1].file_id)  # Largest photo
         media_type = "photo"
+        local_path = f"assets/ad_media/{user_id}.jpg"
+        try:
+            await bot.download(message.photo[-1], destination=local_path)
+            media_id = local_path
+        except Exception:
+            media_id = str(message.photo[-1].file_id)
     elif message.video:
-        media_id = str(message.video.file_id)
         media_type = "video"
+        local_path = f"assets/ad_media/{user_id}.mp4"
+        try:
+            await bot.download(message.video, destination=local_path)
+            media_id = local_path
+        except Exception:
+            media_id = str(message.video.file_id)
     elif message.document:
-        media_id = str(message.document.file_id)
         media_type = "document"
+        local_path = f"assets/ad_media/{user_id}_doc.dat"
+        try:
+            await bot.download(message.document, destination=local_path)
+            media_id = local_path
+        except Exception:
+            media_id = str(message.document.file_id)
     elif message.animation:
-        media_id = str(message.animation.file_id)
         media_type = "animation"
+        local_path = f"assets/ad_media/{user_id}_anim.mp4"
+        try:
+            await bot.download(message.animation, destination=local_path)
+            media_id = local_path
+        except Exception:
+            media_id = str(message.animation.file_id)
 
     if not ad_text and not media_id:
         await message.answer(
@@ -754,15 +780,16 @@ async def btn_preview_ad(call: CallbackQuery, bot: Bot):
 
     if media_id:
         caption = f"{header}{ad_text}{footer}" if ad_text else f"{header}<i>(No caption)</i>{footer}"
+        file_to_send = FSInputFile(media_id) if (isinstance(media_id, str) and os.path.exists(media_id)) else media_id
         try:
             if media_type == "photo":
-                await bot.send_photo(call.message.chat.id, photo=media_id, caption=caption, parse_mode="HTML", reply_markup=back_kb)
+                await bot.send_photo(call.message.chat.id, photo=file_to_send, caption=caption, parse_mode="HTML", reply_markup=back_kb)
             elif media_type == "video":
-                await bot.send_video(call.message.chat.id, video=media_id, caption=caption, parse_mode="HTML", reply_markup=back_kb)
+                await bot.send_video(call.message.chat.id, video=file_to_send, caption=caption, parse_mode="HTML", reply_markup=back_kb)
             elif media_type == "animation":
-                await bot.send_animation(call.message.chat.id, animation=media_id, caption=caption, parse_mode="HTML", reply_markup=back_kb)
+                await bot.send_animation(call.message.chat.id, animation=file_to_send, caption=caption, parse_mode="HTML", reply_markup=back_kb)
             elif media_type == "document":
-                await bot.send_document(call.message.chat.id, document=media_id, caption=caption, parse_mode="HTML", reply_markup=back_kb)
+                await bot.send_document(call.message.chat.id, document=file_to_send, caption=caption, parse_mode="HTML", reply_markup=back_kb)
             else:
                 await bot.send_message(call.message.chat.id, f"{header}{ad_text}{footer}", parse_mode="HTML", reply_markup=back_kb)
             

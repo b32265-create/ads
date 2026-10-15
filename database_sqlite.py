@@ -59,6 +59,32 @@ async def init_db():
         );
         """)
 
+        for col_def in [
+            "autodm_enabled INTEGER DEFAULT 0",
+            "autodm_message TEXT DEFAULT NULL",
+            "autodm_media_id TEXT DEFAULT NULL",
+            "autodm_media_type TEXT DEFAULT NULL",
+            "autodm_rate_per_hour INTEGER DEFAULT 10",
+            "autodm_target_mode TEXT DEFAULT 'groups'",
+            "autodm_custom_targets TEXT DEFAULT ''",
+            "autodm_total_sent INTEGER DEFAULT 0",
+            "autodm_total_failed INTEGER DEFAULT 0"
+        ]:
+            try:
+                await db.execute(f"ALTER TABLE user_settings ADD COLUMN {col_def};")
+            except Exception:
+                pass
+
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS contacted_leads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            lead_id TEXT,
+            contacted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, lead_id)
+        );
+        """)
+
         # 3. Hosted Telegram Accounts table (with ban tracking)
         await db.execute("""
         CREATE TABLE IF NOT EXISTS accounts (
@@ -266,6 +292,13 @@ async def get_total_active_campaigns():
             row = await cursor.fetchone()
             return row[0] if row else 0
 
+async def get_active_running_users():
+    """List of user_ids with status='Running'."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT user_id FROM user_settings WHERE status = 'Running'") as cursor:
+            rows = await cursor.fetchall()
+            return [r[0] for r in rows]
+
 async def get_global_total_sent():
     """Sum of all ads sent across all users."""
     async with aiosqlite.connect(DB_PATH) as db:
@@ -299,7 +332,10 @@ async def update_user_setting(user_id: int, key: str, value):
         'message_delay', 'target_type', 'max_cycles', 'completed_cycles',
         'status', 'ai_reply', 'exclude_groups',
         'schedule_start', 'schedule_end', 'schedule_enabled',
-        'forward_account', 'manager_enabled'
+        'forward_account', 'manager_enabled',
+        'autodm_enabled', 'autodm_message', 'autodm_media_id', 'autodm_media_type',
+        'autodm_rate_per_hour', 'autodm_target_mode', 'autodm_custom_targets',
+        'autodm_total_sent', 'autodm_total_failed'
     }
     if key not in allowed_keys:
         raise ValueError(f"Invalid setting key: {key}")
@@ -307,6 +343,48 @@ async def update_user_setting(user_id: int, key: str, value):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(f"UPDATE user_settings SET {key} = ? WHERE user_id = ?", (value, user_id))
         await db.commit()
+
+# --- AUTO DM HELPERS ---
+async def is_lead_contacted(user_id: int, lead_id: str) -> bool:
+    """Returns True if this lead has already received an Auto DM from this user."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id FROM contacted_leads WHERE user_id = ? AND lead_id = ? LIMIT 1",
+            (user_id, str(lead_id).lower().strip())
+        ) as cursor:
+            row = await cursor.fetchone()
+            return bool(row)
+
+async def mark_lead_contacted(user_id: int, lead_id: str):
+    """Mark a lead as contacted to prevent duplicate messages."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO contacted_leads (user_id, lead_id) VALUES (?, ?)",
+            (user_id, str(lead_id).lower().strip())
+        )
+        await db.commit()
+
+async def clear_contacted_leads(user_id: int):
+    """Reset contacted leads history for a user."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM contacted_leads WHERE user_id = ?", (user_id,))
+        await db.commit()
+
+async def increment_autodm_stats(user_id: int, sent: int = 0, failed: int = 0):
+    """Increment Auto DM total sent and failed counts."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE user_settings SET autodm_total_sent = COALESCE(autodm_total_sent, 0) + ?, autodm_total_failed = COALESCE(autodm_total_failed, 0) + ? WHERE user_id = ?",
+            (sent, failed, user_id)
+        )
+        await db.commit()
+
+async def get_active_autodm_users() -> list:
+    """List of user_ids with autodm_enabled = 1."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT user_id FROM user_settings WHERE autodm_enabled = 1") as cursor:
+            rows = await cursor.fetchall()
+            return [r[0] for r in rows]
 
 # --- ACCOUNTS OPERATIONS ---
 async def add_account(user_id: int, phone_number: str, session_string: str, account_name: str = ""):

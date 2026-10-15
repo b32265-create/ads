@@ -11,3 +11,5 @@ __pycache__/
 .DS_Store
 assets/user_banners/
 assets/test_banner.png
+assets/ad_cache/
+assets/ad_media/

@@ -198,6 +198,26 @@ async def init_db():
         # Migrations for user_settings
         await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS forward_account TEXT DEFAULT NULL;")
         await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS manager_enabled SMALLINT DEFAULT 1;")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_enabled SMALLINT DEFAULT 0;")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_message TEXT DEFAULT NULL;")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_media_id TEXT DEFAULT NULL;")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_media_type TEXT DEFAULT NULL;")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_rate_per_hour INTEGER DEFAULT 10;")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_target_mode TEXT DEFAULT 'groups';")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_custom_targets TEXT DEFAULT '';")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_total_sent INTEGER DEFAULT 0;")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_total_failed INTEGER DEFAULT 0;")
+
+        # 10. CONTACTED LEADS TABLE (Anti-spam / Anti-duplicate protection)
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS contacted_leads (
+            id           BIGSERIAL PRIMARY KEY,
+            user_id      BIGINT,
+            lead_id      TEXT,
+            contacted_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(user_id, lead_id)
+        );
+        """)
 
         # ── INDEXES for performance ──────────────────────
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_accounts_user_id   ON accounts(user_id);")
@@ -372,7 +392,10 @@ _ALLOWED_SETTING_KEYS = {
     'message_delay', 'target_type', 'max_cycles', 'completed_cycles',
     'status', 'ai_reply', 'exclude_groups',
     'schedule_start', 'schedule_end', 'schedule_enabled',
-    'forward_account', 'manager_enabled'
+    'forward_account', 'manager_enabled',
+    'autodm_enabled', 'autodm_message', 'autodm_media_id', 'autodm_media_type',
+    'autodm_rate_per_hour', 'autodm_target_mode', 'autodm_custom_targets',
+    'autodm_total_sent', 'autodm_total_failed'
 }
 
 async def get_user_settings(user_id: int) -> Dict:
@@ -430,6 +453,55 @@ async def update_user_settings_bulk(user_id: int, updates: Dict[str, Any]):
                     f"UPDATE user_settings SET {key} = $1 WHERE user_id = $2",
                     value, user_id
                 )
+
+async def get_active_running_users() -> List[int]:
+    """List of user_ids with status='Running'."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT user_id FROM user_settings WHERE status = 'Running'")
+        return [r["user_id"] for r in rows]
+
+# --- AUTO DM HELPERS ---
+async def is_lead_contacted(user_id: int, lead_id: str) -> bool:
+    """Returns True if this lead has already received an Auto DM from this user."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id FROM contacted_leads WHERE user_id = $1 AND lead_id = $2 LIMIT 1",
+            user_id, str(lead_id).lower().strip()
+        )
+        return bool(row)
+
+async def mark_lead_contacted(user_id: int, lead_id: str):
+    """Mark a lead as contacted to prevent duplicate messages."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO contacted_leads (user_id, lead_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            user_id, str(lead_id).lower().strip()
+        )
+
+async def clear_contacted_leads(user_id: int):
+    """Reset contacted leads history for a user."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM contacted_leads WHERE user_id = $1", user_id)
+
+async def increment_autodm_stats(user_id: int, sent: int = 0, failed: int = 0):
+    """Increment Auto DM total sent and failed counts."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE user_settings SET autodm_total_sent = COALESCE(autodm_total_sent, 0) + $1, autodm_total_failed = COALESCE(autodm_total_failed, 0) + $2 WHERE user_id = $3",
+            sent, failed, user_id
+        )
+
+async def get_active_autodm_users() -> List[int]:
+    """List of user_ids with autodm_enabled = 1."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT user_id FROM user_settings WHERE autodm_enabled = 1")
+        return [r["user_id"] for r in rows]
 
 # ─────────────────────────────────────────────────────────
 # ACCOUNTS OPERATIONS

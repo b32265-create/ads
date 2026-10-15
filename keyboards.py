@@ -62,6 +62,7 @@ def get_dashboard_keyboard(
         ],
         [
             InlineKeyboardButton(text="Forward Account", callback_data="set_forward_account", icon_custom_emoji_id=ID_STAR),
+            InlineKeyboardButton(text="Auto DM (Hourly)", callback_data="auto_dm_menu", icon_custom_emoji_id=ID_FLASH),
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -224,3 +225,65 @@ def get_admin_fsub_keyboard(channels: List[Dict]) -> InlineKeyboardMarkup:
         ])
     keyboard.append([InlineKeyboardButton(text="Back to Admin Panel", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_autodm_keyboard(
+    enabled: bool = False,
+    rate: int = 10,
+    target_mode: str = "groups"
+) -> InlineKeyboardMarkup:
+    """Auto DM control keyboard with premium emoji icons."""
+    toggle_btn_text = "Stop Auto DM" if enabled else "Start Auto DM"
+    toggle_icon = ID_PAUSED if enabled else ID_FIRE
+    mode_text = "Target: Group Members" if target_mode == "groups" else "Target: Custom List"
+    
+    keyboard = [
+        [
+            InlineKeyboardButton(text=toggle_btn_text, callback_data="toggle_autodm_active", icon_custom_emoji_id=toggle_icon),
+        ],
+        [
+            InlineKeyboardButton(text="Set DM Message", callback_data="set_autodm_message", icon_custom_emoji_id=ID_MSG),
+            InlineKeyboardButton(text=f"Rate: {rate}/hr", callback_data="set_autodm_rate", icon_custom_emoji_id=ID_INTERVAL),
+        ],
+        [
+            InlineKeyboardButton(text=mode_text, callback_data="toggle_autodm_mode", icon_custom_emoji_id=ID_TARGET),
+            InlineKeyboardButton(text="Set Target Leads", callback_data="set_autodm_targets", icon_custom_emoji_id=ID_USER),
+        ],
+        [
+            InlineKeyboardButton(text="Send 1-Hr Batch Now", callback_data="autodm_send_now", icon_custom_emoji_id=ID_ROCKET),
+            InlineKeyboardButton(text="Reset Leads DB", callback_data="autodm_reset_leads", icon_custom_emoji_id=ID_TRASH),
+        ],
+        [
+            InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_autodm_rate_keyboard() -> InlineKeyboardMarkup:
+    """Pre-set hourly limits for Auto DM."""
+    keyboard = [
+        [
+            InlineKeyboardButton(text="5 DMs / hr", callback_data="autodm_rate_5", icon_custom_emoji_id=ID_INTERVAL),
+            InlineKeyboardButton(text="10 DMs / hr (Safe)", callback_data="autodm_rate_10", icon_custom_emoji_id=ID_VERIFIED),
+        ],
+        [
+            InlineKeyboardButton(text="15 DMs / hr", callback_data="autodm_rate_15", icon_custom_emoji_id=ID_FLASH),
+            InlineKeyboardButton(text="20 DMs / hr (Fast)", callback_data="autodm_rate_20", icon_custom_emoji_id=ID_FIRE),
+        ],
+        [
+            InlineKeyboardButton(text="Custom Hourly Rate", callback_data="autodm_rate_custom", icon_custom_emoji_id=ID_STAR),
+        ],
+        [
+            InlineKeyboardButton(text="Back to Auto DM", callback_data="auto_dm_menu", icon_custom_emoji_id=ID_BACK)
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_autodm_back_keyboard() -> InlineKeyboardMarkup:
+    """Back button returning to Auto DM menu."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Back to Auto DM", callback_data="auto_dm_menu", icon_custom_emoji_id=ID_BACK)]
+    ])
+
