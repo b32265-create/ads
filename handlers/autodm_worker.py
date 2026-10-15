@@ -2,6 +2,8 @@ import logging
 import asyncio
 import os
 import random
+import re
+import html
 from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple, List, Set
 from aiogram import Router, F, Bot
@@ -177,6 +179,17 @@ async def release_and_mark_lead(
             _IN_FLIGHT_LEADS.discard((user_id, k))
 
 
+def clean_html_preview(text: str, max_chars: int = 80) -> str:
+    """Safely strips HTML tags and escapes special characters for telegram entity rendering."""
+    if not text:
+        return ""
+    clean = re.sub(r'<[^>]+>', ' ', str(text))
+    clean = ' '.join(clean.split()).strip()
+    if len(clean) > max_chars:
+        clean = clean[:max_chars].strip() + "..."
+    return html.escape(clean)
+
+
 def get_autodm_dashboard_text(settings: dict, accounts_count: int) -> str:
     enabled = bool(settings.get("autodm_enabled", 0))
     status_disp = f"🟢 <b>ACTIVE & BROADCASTING HOURLY</b>" if enabled else f"🔴 <b>PAUSED / IDLE</b>"
@@ -186,28 +199,23 @@ def get_autodm_dashboard_text(settings: dict, accounts_count: int) -> str:
     
     keywords = settings.get("autodm_keywords", "") or ""
     kw_list = [k.strip() for k in keywords.replace(",", "\n").split("\n") if k.strip()]
-    kw_disp = f"<code>{', '.join(kw_list[:4])}{'...' if len(kw_list) > 4 else ''}</code>" if kw_list else "<i>All active chatters (No filter)</i>"
+    kw_disp = f"<code>{html.escape(', '.join(kw_list[:4]))}{'...' if len(kw_list) > 4 else ''}</code>" if kw_list else "<i>All active chatters (No filter)</i>"
 
     auto_reply = settings.get("autodm_auto_reply", "") or ""
-    ar_snippet = auto_reply.strip()
-    if len(ar_snippet) > 40:
-        ar_snippet = ar_snippet[:40] + "..."
-    ar_disp = f"<code>{ar_snippet}</code>" if ar_snippet else "<i>Disabled / Not Set</i>"
+    ar_disp = f"<code>{clean_html_preview(auto_reply, 40)}</code>" if auto_reply else "<i>Disabled / Not Set</i>"
 
     custom_targets = settings.get("autodm_custom_targets", "") or ""
     targets_count = len([x for x in custom_targets.replace(",", "\n").split("\n") if x.strip()])
     
-    msg = settings.get("autodm_message") or settings.get("ad_message") or "<i>(Default Ad Message)</i>"
+    msg = settings.get("autodm_message") or settings.get("ad_message") or ""
     has_media = bool(settings.get("autodm_media_id") or settings.get("ad_media_id"))
     media_note = " [📎 Media Attached]" if has_media else ""
     
     total_sent = settings.get("autodm_total_sent", 0)
     total_failed = settings.get("autodm_total_failed", 0)
 
-    # Snippet of message
-    clean_snippet = msg.strip()
-    if len(clean_snippet) > 80:
-        clean_snippet = clean_snippet[:80] + "..."
+    # Snippet of message (safe from breaking HTML entities)
+    clean_snippet = clean_html_preview(msg, 80) if msg else "<i>(Default Ad Message)</i>"
 
     return (
         f"╔══════════════════════════╗\n"
@@ -618,14 +626,25 @@ async def btn_autodm_menu(call: CallbackQuery, bot: Bot, state: FSMContext):
         rate=settings.get("autodm_rate_per_hour", 10),
         target_mode=settings.get("autodm_target_mode", "groups")
     )
-    if call.message.photo or call.message.video or call.message.animation or call.message.document:
+    try:
+        if call.message.photo or call.message.video or call.message.animation or call.message.document:
+            try:
+                await call.message.delete()
+            except Exception:
+                pass
+            await bot.send_message(call.message.chat.id, text, reply_markup=markup, parse_mode="HTML")
+        else:
+            await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    except Exception as e:
+        logger.warning(f"Error updating auto_dm_menu: {e}")
         try:
-            await call.message.delete()
+            try:
+                await call.message.delete()
+            except Exception:
+                pass
+            await bot.send_message(call.message.chat.id, text, reply_markup=markup, parse_mode="HTML")
         except Exception:
-            pass
-        await bot.send_message(call.message.chat.id, text, reply_markup=markup, parse_mode="HTML")
-    else:
-        await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+            await bot.send_message(call.message.chat.id, re.sub(r'<[^>]+>', '', text), reply_markup=markup)
 
 
 @router.callback_query(F.data == "toggle_autodm_active")
