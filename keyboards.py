@@ -230,12 +230,14 @@ def get_admin_fsub_keyboard(channels: List[Dict]) -> InlineKeyboardMarkup:
 def get_autodm_keyboard(
     enabled: bool = False,
     rate: int = 10,
-    target_mode: str = "groups"
+    target_mode: str = "groups",
+    pending_leads: int = 0
 ) -> InlineKeyboardMarkup:
     """Auto DM control keyboard with premium emoji icons."""
-    toggle_btn_text = "Stop Auto DM" if enabled else "Start Auto DM"
+    toggle_btn_text = "Stop Auto DM (10m Scan)" if enabled else "Start Auto DM (10m Scan)"
     toggle_icon = ID_PAUSED if enabled else ID_FIRE
-    mode_text = "Target: Group Members" if target_mode == "groups" else "Target: Custom List"
+    mode_text = "Target: Group 500 Msgs" if target_mode == "groups" else "Target: Custom List"
+    leads_text = f"Saved Leads: {pending_leads} Ready" if pending_leads > 0 else "Saved Leads (0)"
     
     keyboard = [
         [
@@ -247,17 +249,18 @@ def get_autodm_keyboard(
         ],
         [
             InlineKeyboardButton(text=mode_text, callback_data="toggle_autodm_mode", icon_custom_emoji_id=ID_TARGET),
-            InlineKeyboardButton(text="Set Target Leads", callback_data="set_autodm_targets", icon_custom_emoji_id=ID_USER),
+            InlineKeyboardButton(text=leads_text, callback_data="autodm_view_leads", icon_custom_emoji_id=ID_USER),
         ],
         [
-            InlineKeyboardButton(text="Set Keywords (Word Filter)", callback_data="set_autodm_keywords", icon_custom_emoji_id=ID_STAR),
+            InlineKeyboardButton(text="Custom Target List", callback_data="set_autodm_targets", icon_custom_emoji_id=ID_USER),
+            InlineKeyboardButton(text="Keywords (Filter)", callback_data="set_autodm_keywords", icon_custom_emoji_id=ID_STAR),
+        ],
+        [
             InlineKeyboardButton(text="Set Auto-Reply", callback_data="set_autodm_autoreply", icon_custom_emoji_id=ID_FLASH),
+            InlineKeyboardButton(text="Scan & Send Now", callback_data="autodm_send_now", icon_custom_emoji_id=ID_ROCKET),
         ],
         [
-            InlineKeyboardButton(text="Send 1-Hr Batch Now", callback_data="autodm_send_now", icon_custom_emoji_id=ID_ROCKET),
             InlineKeyboardButton(text="Reset Leads DB", callback_data="autodm_reset_leads", icon_custom_emoji_id=ID_TRASH),
-        ],
-        [
             InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)
         ]
     ]
@@ -265,18 +268,18 @@ def get_autodm_keyboard(
 
 
 def get_autodm_rate_keyboard() -> InlineKeyboardMarkup:
-    """Pre-set hourly limits for Auto DM (Strictly capped at max 10/hr)."""
+    """Pre-set hourly limits for Auto DM (Scans 500 msgs every 10 minutes)."""
     keyboard = [
         [
-            InlineKeyboardButton(text="3 DMs / hr (Stealth)", callback_data="autodm_rate_3", icon_custom_emoji_id=ID_INTERVAL),
-            InlineKeyboardButton(text="5 DMs / hr (Safe)", callback_data="autodm_rate_5", icon_custom_emoji_id=ID_INTERVAL),
+            InlineKeyboardButton(text="1 DM / 10m (~6/hr Stealth)", callback_data="autodm_rate_6", icon_custom_emoji_id=ID_INTERVAL),
+            InlineKeyboardButton(text="2 DMs / 10m (~12/hr Safe)", callback_data="autodm_rate_12", icon_custom_emoji_id=ID_INTERVAL),
         ],
         [
-            InlineKeyboardButton(text="8 DMs / hr", callback_data="autodm_rate_8", icon_custom_emoji_id=ID_FLASH),
-            InlineKeyboardButton(text="10 DMs / hr (Max Safe Limit)", callback_data="autodm_rate_10", icon_custom_emoji_id=ID_VERIFIED),
+            InlineKeyboardButton(text="3 DMs / 10m (~18/hr Fast)", callback_data="autodm_rate_18", icon_custom_emoji_id=ID_FLASH),
+            InlineKeyboardButton(text="5 DMs / 10m (~30/hr Turbo)", callback_data="autodm_rate_30", icon_custom_emoji_id=ID_VERIFIED),
         ],
         [
-            InlineKeyboardButton(text="Custom Rate (Max 10)", callback_data="autodm_rate_custom", icon_custom_emoji_id=ID_STAR),
+            InlineKeyboardButton(text="Custom Rate / Hour", callback_data="autodm_rate_custom", icon_custom_emoji_id=ID_STAR),
         ],
         [
             InlineKeyboardButton(text="Back to Auto DM", callback_data="auto_dm_menu", icon_custom_emoji_id=ID_BACK)

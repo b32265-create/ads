@@ -209,6 +209,8 @@ async def init_db():
         await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_total_failed INTEGER DEFAULT 0;")
         await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_keywords TEXT DEFAULT '';")
         await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_auto_reply TEXT DEFAULT NULL;")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_interval_minutes INTEGER DEFAULT 10;")
+        await conn.execute("ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS autodm_rate_per_round INTEGER DEFAULT 2;")
 
         # 10. CONTACTED LEADS TABLE (Anti-spam / Anti-duplicate protection)
         await conn.execute("""
@@ -218,6 +220,34 @@ async def init_db():
             lead_id      TEXT,
             contacted_at TIMESTAMPTZ DEFAULT NOW(),
             UNIQUE(user_id, lead_id)
+        );
+        """)
+
+        # 11. SCRAPED LEADS TABLE
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS scraped_leads (
+            id           BIGSERIAL PRIMARY KEY,
+            user_id      BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
+            username     TEXT,
+            lead_id      TEXT,
+            first_name   TEXT,
+            group_id     TEXT,
+            group_title  TEXT,
+            scraped_at   TIMESTAMPTZ DEFAULT NOW(),
+            is_contacted SMALLINT DEFAULT 0,
+            UNIQUE(user_id, lead_id)
+        );
+        """)
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_scraped_leads_user ON scraped_leads(user_id, is_contacted);")
+
+        # 12. GROUP SCAN PROGRESS
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS group_scan_progress (
+            user_id         BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
+            group_id        TEXT,
+            last_msg_id     BIGINT DEFAULT 0,
+            last_scanned_at TIMESTAMPTZ DEFAULT NOW(),
+            PRIMARY KEY(user_id, group_id)
         );
         """)
 
@@ -505,6 +535,112 @@ async def get_active_autodm_users() -> List[int]:
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT user_id FROM user_settings WHERE autodm_enabled = 1")
         return [r["user_id"] for r in rows]
+
+# --- SCRAPED LEADS HELPERS ---
+async def save_scraped_leads_batch(user_id: int, leads: list) -> int:
+    """
+    Saves a batch of leads: (username, lead_id, first_name, group_id, group_title).
+    Returns number of newly saved unique leads.
+    """
+    if not leads:
+        return 0
+    pool = await get_pool()
+    new_count = 0
+    async with pool.acquire() as conn:
+        for item in leads:
+            username, lead_id, first_name, group_id, group_title = item
+            clean_u = (username or "").lstrip("@").strip()
+            lead_id_str = str(lead_id).strip()
+            res = await conn.execute("""
+                INSERT INTO scraped_leads (user_id, username, lead_id, first_name, group_id, group_title)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (user_id, lead_id) DO NOTHING
+            """, user_id, clean_u or None, lead_id_str, first_name or "", str(group_id), group_title or "")
+            if res.endswith("1"):
+                new_count += 1
+    return new_count
+
+async def get_scraped_leads_stats(user_id: int) -> dict:
+    """Returns count of total, pending (uncontacted), and contacted leads."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT 
+                COUNT(*) AS total,
+                COALESCE(SUM(CASE WHEN is_contacted = 0 THEN 1 ELSE 0 END), 0) AS pending,
+                COALESCE(SUM(CASE WHEN is_contacted = 1 THEN 1 ELSE 0 END), 0) AS contacted
+            FROM scraped_leads
+            WHERE user_id = $1
+        """, user_id)
+        if row:
+            return {
+                "total": row["total"] or 0,
+                "pending": row["pending"] or 0,
+                "contacted": row["contacted"] or 0
+            }
+        return {"total": 0, "pending": 0, "contacted": 0}
+
+async def get_pending_scraped_leads(user_id: int, limit: int = 50) -> list:
+    """Fetch uncontacted leads for Auto DM dispatch."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM scraped_leads WHERE user_id = $1 AND is_contacted = 0 ORDER BY id ASC LIMIT $2",
+            user_id, limit
+        )
+        return [dict(r) for r in rows]
+
+async def mark_scraped_lead_contacted(user_id: int, lead_id: str, username: str = None):
+    """Marks a lead as contacted in scraped_leads table."""
+    pool = await get_pool()
+    clean_u = (username or "").lstrip("@").strip()
+    async with pool.acquire() as conn:
+        if clean_u:
+            await conn.execute(
+                "UPDATE scraped_leads SET is_contacted = 1 WHERE user_id = $1 AND (lead_id = $2 OR LOWER(username) = $3)",
+                user_id, str(lead_id).strip(), clean_u.lower()
+            )
+        else:
+            await conn.execute(
+                "UPDATE scraped_leads SET is_contacted = 1 WHERE user_id = $1 AND lead_id = $2",
+                user_id, str(lead_id).strip()
+            )
+
+async def get_all_scraped_leads_list(user_id: int, limit: int = 1000) -> list:
+    """Returns list of scraped leads for display / export."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT username, lead_id, first_name, group_title, is_contacted, scraped_at FROM scraped_leads WHERE user_id = $1 ORDER BY id DESC LIMIT $2",
+            user_id, limit
+        )
+        return [dict(r) for r in rows]
+
+async def clear_scraped_leads(user_id: int):
+    """Deletes all scraped leads for this user."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM scraped_leads WHERE user_id = $1", user_id)
+
+async def get_group_last_scanned_msg_id(user_id: int, group_id: str) -> int:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchval(
+            "SELECT last_msg_id FROM group_scan_progress WHERE user_id = $1 AND group_id = $2",
+            user_id, str(group_id)
+        )
+        return row or 0
+
+async def update_group_last_scanned_msg_id(user_id: int, group_id: str, msg_id: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO group_scan_progress (user_id, group_id, last_msg_id, last_scanned_at)
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT (user_id, group_id) DO UPDATE SET
+                last_msg_id = GREATEST(group_scan_progress.last_msg_id, EXCLUDED.last_msg_id),
+                last_scanned_at = NOW()
+        """, user_id, str(group_id), msg_id)
 
 # ─────────────────────────────────────────────────────────
 # ACCOUNTS OPERATIONS

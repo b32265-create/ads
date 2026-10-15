@@ -70,7 +70,9 @@ async def init_db():
             "autodm_total_sent INTEGER DEFAULT 0",
             "autodm_total_failed INTEGER DEFAULT 0",
             "autodm_keywords TEXT DEFAULT ''",
-            "autodm_auto_reply TEXT DEFAULT NULL"
+            "autodm_auto_reply TEXT DEFAULT NULL",
+            "autodm_interval_minutes INTEGER DEFAULT 10",
+            "autodm_rate_per_round INTEGER DEFAULT 2"
         ]:
             try:
                 await db.execute(f"ALTER TABLE user_settings ADD COLUMN {col_def};")
@@ -84,6 +86,32 @@ async def init_db():
             lead_id TEXT,
             contacted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, lead_id)
+        );
+        """)
+
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS scraped_leads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            username TEXT,
+            lead_id TEXT,
+            first_name TEXT,
+            group_id TEXT,
+            group_title TEXT,
+            scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_contacted INTEGER DEFAULT 0,
+            UNIQUE(user_id, lead_id)
+        );
+        """)
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_scraped_leads_user ON scraped_leads(user_id, is_contacted);")
+
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS group_scan_progress (
+            user_id INTEGER,
+            group_id TEXT,
+            last_msg_id INTEGER DEFAULT 0,
+            last_scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(user_id, group_id)
         );
         """)
 
@@ -388,6 +416,113 @@ async def get_active_autodm_users() -> list:
         async with db.execute("SELECT user_id FROM user_settings WHERE autodm_enabled = 1") as cursor:
             rows = await cursor.fetchall()
             return [r[0] for r in rows]
+
+# --- SCRAPED LEADS HELPERS ---
+async def save_scraped_leads_batch(user_id: int, leads: list) -> int:
+    """
+    Saves a batch of leads: (username, lead_id, first_name, group_id, group_title).
+    Returns number of newly saved unique leads.
+    """
+    if not leads:
+        return 0
+    new_count = 0
+    async with aiosqlite.connect(DB_PATH) as db:
+        for item in leads:
+            username, lead_id, first_name, group_id, group_title = item
+            clean_u = (username or "").lstrip("@").strip()
+            lead_id_str = str(lead_id).strip()
+            cur = await db.execute("""
+                INSERT OR IGNORE INTO scraped_leads (user_id, username, lead_id, first_name, group_id, group_title)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (user_id, clean_u or None, lead_id_str, first_name or "", str(group_id), group_title or ""))
+            if cur.rowcount > 0:
+                new_count += 1
+        await db.commit()
+    return new_count
+
+async def get_scraped_leads_stats(user_id: int) -> dict:
+    """Returns count of total, pending (uncontacted), and contacted leads."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("""
+            SELECT 
+                COUNT(*),
+                COALESCE(SUM(CASE WHEN is_contacted = 0 THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN is_contacted = 1 THEN 1 ELSE 0 END), 0)
+            FROM scraped_leads 
+            WHERE user_id = ?
+        """, (user_id,)) as cur:
+            row = await cur.fetchone()
+            if row:
+                return {
+                    "total": row[0] or 0,
+                    "pending": row[1] or 0,
+                    "contacted": row[2] or 0
+                }
+            return {"total": 0, "pending": 0, "contacted": 0}
+
+async def get_pending_scraped_leads(user_id: int, limit: int = 50) -> list:
+    """Fetch uncontacted leads for Auto DM dispatch."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM scraped_leads WHERE user_id = ? AND is_contacted = 0 ORDER BY id ASC LIMIT ?",
+            (user_id, limit)
+        ) as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+async def mark_scraped_lead_contacted(user_id: int, lead_id: str, username: str = None):
+    """Marks a lead as contacted in scraped_leads table."""
+    clean_u = (username or "").lstrip("@").strip()
+    async with aiosqlite.connect(DB_PATH) as db:
+        if clean_u:
+            await db.execute(
+                "UPDATE scraped_leads SET is_contacted = 1 WHERE user_id = ? AND (lead_id = ? OR LOWER(username) = ?)",
+                (user_id, str(lead_id).strip(), clean_u.lower())
+            )
+        else:
+            await db.execute(
+                "UPDATE scraped_leads SET is_contacted = 1 WHERE user_id = ? AND lead_id = ?",
+                (user_id, str(lead_id).strip())
+            )
+        await db.commit()
+
+async def get_all_scraped_leads_list(user_id: int, limit: int = 1000) -> list:
+    """Returns list of scraped leads for display / export."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT username, lead_id, first_name, group_title, is_contacted, scraped_at FROM scraped_leads WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+            (user_id, limit)
+        ) as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+async def clear_scraped_leads(user_id: int):
+    """Deletes all scraped leads for this user."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM scraped_leads WHERE user_id = ?", (user_id,))
+        await db.commit()
+
+async def get_group_last_scanned_msg_id(user_id: int, group_id: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT last_msg_id FROM group_scan_progress WHERE user_id = ? AND group_id = ?",
+            (user_id, str(group_id))
+        ) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else 0
+
+async def update_group_last_scanned_msg_id(user_id: int, group_id: str, msg_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            INSERT INTO group_scan_progress (user_id, group_id, last_msg_id, last_scanned_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id, group_id) DO UPDATE SET
+                last_msg_id = MAX(last_msg_id, excluded.last_msg_id),
+                last_scanned_at = CURRENT_TIMESTAMP
+        """, (user_id, str(group_id), msg_id))
+        await db.commit()
 
 # --- ACCOUNTS OPERATIONS ---
 async def add_account(user_id: int, phone_number: str, session_string: str, account_name: str = ""):

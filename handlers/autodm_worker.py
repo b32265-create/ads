@@ -7,7 +7,7 @@ import html
 from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple, List, Set
 from aiogram import Router, F, Bot
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -60,21 +60,17 @@ class AutoDMStates(StatesGroup):
     waiting_auto_reply = State()
 
 
-def is_latest_online_user(user, max_offline_hours: int = 12) -> bool:
+def is_eligible_lead_user(user) -> bool:
     """
-    Checks if a user is currently active or recently online.
+    Checks if a user is an eligible real person (not bot/deleted/self/dead).
     Allowed:
-    1. UserStatusOnline -> Currently online right now
-    2. UserStatusRecently -> Online within last 1-2 days (exact time hidden by privacy)
-    3. UserStatusOffline -> Exact timestamp was_online <= max_offline_hours (default 12 hours)
-
-    Disallowed / Filtered:
+    - Real users who posted messages in groups
+    - Active / Online / Recently online
+    - Privacy-hidden status (status=None) - which is normal for Telegram group members
+    Disallowed:
     - Bots, deleted accounts, self
-    - UserStatusLastWeek (inactive for a week)
-    - UserStatusLastMonth (inactive for a month)
-    - UserStatusEmpty (dead or ghost account)
-    - UserStatusOffline where was_online > max_offline_hours
-    - Users with no status or unknown
+    - Inactive for over a month (UserStatusLastMonth)
+    - Dead or ghost accounts (UserStatusEmpty)
     """
     if not user or not isinstance(user, User):
         return False
@@ -82,26 +78,13 @@ def is_latest_online_user(user, max_offline_hours: int = 12) -> bool:
         return False
 
     status = getattr(user, "status", None)
-    if not status:
+    if status and isinstance(status, (UserStatusLastMonth, UserStatusEmpty)):
         return False
+    return True
 
-    if isinstance(status, UserStatusOnline):
-        return True
-    if isinstance(status, UserStatusRecently):
-        return True
-    if isinstance(status, UserStatusOffline):
-        was_online = getattr(status, "was_online", None)
-        if was_online:
-            try:
-                now_utc = datetime.now(timezone.utc)
-                if was_online.tzinfo is None:
-                    was_online = was_online.replace(tzinfo=timezone.utc)
-                diff = (now_utc - was_online).total_seconds()
-                if 0 <= diff <= max_offline_hours * 3600:
-                    return True
-            except Exception:
-                pass
-    return False
+
+# Backward compatibility alias
+is_latest_online_user = is_eligible_lead_user
 
 
 async def is_lead_already_contacted_or_in_flight(
@@ -190,12 +173,14 @@ def clean_html_preview(text: str, max_chars: int = 80) -> str:
     return html.escape(clean)
 
 
-def get_autodm_dashboard_text(settings: dict, accounts_count: int) -> str:
+def get_autodm_dashboard_text(settings: dict, accounts_count: int, scraped_stats: dict = None) -> str:
+    scraped_stats = scraped_stats or {"total": 0, "pending": 0, "contacted": 0}
     enabled = bool(settings.get("autodm_enabled", 0))
-    status_disp = f"🟢 <b>ACTIVE & BROADCASTING HOURLY</b>" if enabled else f"🔴 <b>PAUSED / IDLE</b>"
-    rate = min(int(settings.get("autodm_rate_per_hour", 10) or 10), 10)
+    status_disp = f"🟢 <b>ACTIVE & SCANNING (Every 10 Mins)</b>" if enabled else f"🔴 <b>PAUSED / IDLE</b>"
+    rate = int(settings.get("autodm_rate_per_hour", 10) or 10)
+    per_10m = max(1, round(rate / 6))
     mode = settings.get("autodm_target_mode", "groups")
-    mode_disp = "Group Last 500 Msgs (Auto-Scrape)" if mode == "groups" else "Custom Target List"
+    mode_disp = "Group 500 Msgs (Auto-Scrape & Save)" if mode == "groups" else "Custom Target List"
     
     keywords = settings.get("autodm_keywords", "") or ""
     kw_list = [k.strip() for k in keywords.replace(",", "\n").split("\n") if k.strip()]
@@ -214,29 +199,31 @@ def get_autodm_dashboard_text(settings: dict, accounts_count: int) -> str:
     total_sent = settings.get("autodm_total_sent", 0)
     total_failed = settings.get("autodm_total_failed", 0)
 
-    # Snippet of message (safe from breaking HTML entities)
     clean_snippet = clean_html_preview(msg, 80) if msg else "<i>(Default Ad Message)</i>"
+
+    leads_info = f"<code>{scraped_stats['total']} Leads</code> (<b>{scraped_stats['pending']}</b> Pending, <b>{scraped_stats['contacted']}</b> Contacted)" if mode == "groups" else f"<code>{targets_count} Targets</code>"
 
     return (
         f"╔══════════════════════════╗\n"
-        f"  ⚡ <b>PER-HOUR AUTO DM ENGINE</b> 🐲\n"
+        f"  ⚡ <b>10-MINUTE AUTO DM & LEAD ENGINE</b> 🐲\n"
         f"╚══════════════════════════╝\n"
-        f"Aapke sabhi connected accounts se targeted leads ko automatically private DMs deliver karne ka smart anti-ban system.\n\n"
+        f"Har 10 minute me groups ke <b>new 500 messages scan</b> karke active usernames ko automatically database me save aur direct DM deliver karne ka system.\n\n"
         f"📊 <b>AUTO DM CONFIGURATION & STATUS</b>\n"
         f"┌ 📱 <b>Hosted Accounts:</b> <code>{accounts_count} Active</code>\n"
-        f"├ ⏱ <b>Hourly Rate:</b> <code>{rate} DMs / hr per account (Max 10)</code>\n"
+        f"├ ⏱ <b>Scan & DM Cycle:</b> <code>Every 10 Minutes</code>\n"
+        f"├ 🚀 <b>Delivery Speed:</b> <code>~{per_10m} DMs / 10m (~{rate}/hr per acc)</code>\n"
         f"├ 🎯 <b>Targeting Mode:</b> <code>{mode_disp}</code>\n"
+        f"├ 📥 <b>Saved Usernames Pool:</b> {leads_info}\n"
         f"├ 🔍 <b>Word / Keyword Filter:</b> {kw_disp}\n"
         f"├ 🤖 <b>Lead Auto-Reply:</b> {ar_disp}\n"
-        f"├ 👥 <b>Custom Leads Pool:</b> <code>{targets_count} Targets</code>\n"
         f"├ 📝 <b>DM Content:</b> {clean_snippet}{media_note}\n"
         f"├ 📤 <b>Total DMs Sent:</b> <code>{total_sent}</code>\n"
         f"├ ⚠️ <b>Total DMs Skipped:</b> <code>{total_failed}</code>\n"
         f"└ {status_disp}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"🛡️ <b>Anti-Duplicate:</b> <code>100% Lifetime Protection (Zero Repeat DMs)</code>\n"
-        f"🟢 <b>Online Filter:</b> <code>Last 500 msgs active & online users only</code>\n"
-        f"⏱ <b>Strict Cap:</b> <code>Max 10 DMs / hr per account</code>"
+        f"🔄 <b>Auto-Scan:</b> <code>Scans 500 new msgs every 10 mins & saves usernames</code>\n"
+        f"👥 <b>Active Leads:</b> <code>Recent chatters from active groups</code>"
     )
 
 
@@ -270,21 +257,122 @@ async def send_dm_to_lead(
     return True
 
 
-async def run_single_account_autodm_round(
+async def scan_and_save_group_leads(
+    user_id: int,
+    accounts: list,
+    settings: dict,
+    max_messages: int = 500
+) -> int:
+    """
+    Scans the latest up to 500 new messages from group chats across connected accounts.
+    Extracts usernames and lead IDs, applies keyword filter if set, and saves them
+    into the persistent database `scraped_leads` table.
+    """
+    raw_kws = settings.get("autodm_keywords", "") or ""
+    kw_filters = [k.strip().lower() for k in raw_kws.replace(",", "\n").split("\n") if k.strip()]
+
+    total_new_saved = 0
+    scanned_groups = set()
+
+    for acc in accounts:
+        session_str = acc.get("session_string")
+        if not session_str:
+            continue
+
+        client = None
+        created_here = False
+        try:
+            client = await get_or_create_client(acc)
+            if not client or not client.is_connected():
+                client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+                await client.connect()
+                created_here = True
+
+            if not await client.is_user_authorized():
+                continue
+
+            async for dialog in client.iter_dialogs(limit=50):
+                if not dialog.is_group:
+                    continue
+
+                group_id_str = str(dialog.id)
+                if group_id_str in scanned_groups:
+                    continue
+                scanned_groups.add(group_id_str)
+
+                group_title = getattr(dialog, "name", "") or getattr(dialog, "title", "Group")
+                last_msg_id = await db.get_group_last_scanned_msg_id(user_id, group_id_str)
+
+                iter_kwargs = {"limit": max_messages}
+                if last_msg_id > 0:
+                    iter_kwargs["min_id"] = last_msg_id
+
+                batch_leads = []
+                highest_seen_id = last_msg_id
+
+                try:
+                    async for msg in client.iter_messages(dialog.input_entity, **iter_kwargs):
+                        if msg.id > highest_seen_id:
+                            highest_seen_id = msg.id
+
+                        # Keyword check
+                        msg_text = (msg.text or "").strip()
+                        if kw_filters:
+                            msg_lower = msg_text.lower()
+                            if not any(kw in msg_lower for kw in kw_filters):
+                                continue
+
+                        sender = None
+                        try:
+                            sender = await msg.get_sender()
+                        except Exception:
+                            sender = getattr(msg, "sender", None)
+
+                        if not sender or not is_eligible_lead_user(sender):
+                            continue
+
+                        uname = getattr(sender, "username", "") or ""
+                        first_name = (getattr(sender, "first_name", "") or "") + " " + (getattr(sender, "last_name", "") or "")
+                        lead_id_str = str(sender.id)
+
+                        # Must have at least a username or a valid numeric ID
+                        if uname or lead_id_str:
+                            batch_leads.append((uname, lead_id_str, first_name.strip(), group_id_str, group_title))
+
+                except Exception as iter_err:
+                    logger.debug(f"Could not iterate messages from {group_title} ({group_id_str}): {iter_err}")
+
+                if highest_seen_id > last_msg_id:
+                    await db.update_group_last_scanned_msg_id(user_id, group_id_str, highest_seen_id)
+
+                if batch_leads:
+                    new_saved = await db.save_scraped_leads_batch(user_id, batch_leads)
+                    total_new_saved += new_saved
+
+        except Exception as acc_err:
+            logger.error(f"Error scanning groups with account {acc.get('id')}: {acc_err}")
+        finally:
+            if created_here and client:
+                try:
+                    await client.disconnect()
+                except Exception:
+                    pass
+
+    return total_new_saved
+
+
+async def dispatch_single_account_autodm(
     bot: Bot,
     user_id: int,
     acc: dict,
     settings: dict,
     local_media: Optional[str] = None,
-    hourly_quota: int = 10
+    round_quota: int = 2
 ) -> Tuple[int, int]:
     """
-    Executes one hourly batch of direct messages for a single account.
-    Strictly filters for latest online users and prevents duplicate messages across accounts.
+    Sends direct messages from one account for this 10-minute round.
+    Pulls from scraped leads pool or custom target list.
     """
-    from dm_relay import get_or_create_client
-    from system_clients import get_system_client
-
     session_str = acc.get("session_string")
     if not session_str:
         return 0, 0
@@ -298,7 +386,6 @@ async def run_single_account_autodm_round(
     created_here = False
     sent_count = 0
     fail_count = 0
-    hourly_quota = max(min(int(hourly_quota or 10), 10), 1)
 
     try:
         client = await get_or_create_client(acc)
@@ -310,207 +397,112 @@ async def run_single_account_autodm_round(
         if not await client.is_user_authorized():
             return 0, 0
 
-        # Mode A: Custom Username List
+        # Fetch candidate leads
+        candidate_leads = []
         if mode == "custom_list":
             raw_targets = settings.get("autodm_custom_targets", "") or ""
-            target_list = [x.strip() for x in raw_targets.replace(",", "\n").split("\n") if x.strip()]
-
-            for target_str in target_list:
-                # Check cancellation
-                c_chk = await db.get_user_settings(user_id)
-                if not c_chk.get("autodm_enabled", 0):
-                    break
-                if sent_count >= hourly_quota:
-                    break
-
-                clean_target = target_str.lstrip("@").strip()
-                if not clean_target:
-                    continue
-
-                # Pre-check database & in-flight set
-                if await is_lead_already_contacted_or_in_flight(user_id, username=clean_target):
-                    continue
-
-                try:
-                    target_entity = await client.get_entity(clean_target)
-                except Exception as ent_err:
-                    logger.debug(f"Could not resolve entity for @{clean_target}: {ent_err}")
-                    await db.mark_lead_contacted(user_id, clean_target)
-                    continue
-
-                if not isinstance(target_entity, User):
-                    await db.mark_lead_contacted(user_id, clean_target)
-                    continue
-
-                # STRICT FILTER: Latest Online Only!
-                if not is_latest_online_user(target_entity):
-                    logger.debug(f"Skipping @{clean_target}: Not latest online / inactive.")
-                    continue
-
-                lead_id_str = str(target_entity.id)
-                uname = getattr(target_entity, "username", "") or clean_target
-
-                # Double check with resolved numeric ID and username
-                if await is_lead_already_contacted_or_in_flight(user_id, lead_id=lead_id_str, username=uname):
-                    continue
-
-                # Reserve in-flight so parallel accounts don't send to same user
-                reserved_keys = await reserve_lead_in_flight(user_id, lead_id=lead_id_str, username=uname)
-
-                try:
-                    await send_dm_to_lead(client, target_entity, dm_text, local_media)
-                    sent_count += 1
-                    await db.increment_autodm_stats(user_id, sent=1, failed=0)
-
-                    # Log delivery
-                    log_client = get_system_client("log")
-                    if log_client and log_client.is_connected():
-                        try:
-                            await log_client.send_message(
-                                user_id,
-                                f"⚡ <b>[AUTO DM DELIVERED]</b>\n"
-                                f"• <b>Account:</b> {acc_name}\n"
-                                f"• <b>Lead:</b> @{uname}\n"
-                                f"• <b>Online Status:</b> Active / Recent ✅\n"
-                                f"• <b>Status:</b> Success ✅",
-                                parse_mode="html"
-                            )
-                        except Exception:
-                            pass
-
-                    # Anti-flood sleep (20-35s)
-                    sleep_dur = random.randint(20, 35)
-                    await asyncio.sleep(sleep_dur)
-
-                except PeerFloodError:
-                    logger.warning(f"PeerFlood on account {acc_name}. Backing off for this hour.")
-                    fail_count += 1
-                    await db.increment_autodm_stats(user_id, sent=0, failed=1)
-                    break
-                except FloodWaitError as fe:
-                    logger.warning(f"FloodWait {fe.seconds}s on account {acc_name}")
-                    fail_count += 1
-                    await db.increment_autodm_stats(user_id, sent=0, failed=1)
-                    break
-                except (UserPrivacyRestrictedError, UserNotMutualContactError):
-                    fail_count += 1
-                    await db.increment_autodm_stats(user_id, sent=0, failed=1)
-                except Exception as e:
-                    logger.debug(f"Auto DM error to @{uname}: {e}")
-                    fail_count += 1
-                    await db.increment_autodm_stats(user_id, sent=0, failed=1)
-                finally:
-                    # ALWAYS mark as contacted in DB so this user is NEVER messaged again
-                    await release_and_mark_lead(user_id, reserved_keys, mark_as_contacted=True)
-
-        # Mode B: Group Members Auto-Scrape (Last 500 Messages Online & Keyword Filtered)
+            targets = [x.strip() for x in raw_targets.replace(",", "\n").split("\n") if x.strip()]
+            for t in targets:
+                clean_t = t.lstrip("@").strip()
+                if clean_t:
+                    candidate_leads.append({"username": clean_t, "lead_id": ""})
         else:
-            raw_kws = settings.get("autodm_keywords", "") or ""
-            kw_filters = [k.strip().lower() for k in raw_kws.replace(",", "\n").split("\n") if k.strip()]
+            # Mode Groups: Pull uncontacted leads from scraped_leads pool in DB
+            db_leads = await db.get_pending_scraped_leads(user_id, limit=round_quota * 4)
+            candidate_leads = db_leads
 
-            async for dialog in client.iter_dialogs(limit=50):
-                c_chk = await db.get_user_settings(user_id)
-                if not c_chk.get("autodm_enabled", 0):
-                    break
-                if sent_count >= hourly_quota:
-                    break
+        for lead in candidate_leads:
+            c_chk = await db.get_user_settings(user_id)
+            if not c_chk.get("autodm_enabled", 0):
+                break
+            if sent_count >= round_quota:
+                break
 
-                # Only target groups / supergroups
-                if not dialog.is_group:
-                    continue
+            uname = (lead.get("username") or "").lstrip("@").strip()
+            lead_id_str = str(lead.get("lead_id") or "").strip()
 
-                group_title = getattr(dialog, "name", "") or getattr(dialog, "title", "Group")
+            if not uname and not lead_id_str:
+                continue
 
-                # Strictly scan the LAST 500 MESSAGES of the group
-                try:
-                    async for msg in client.iter_messages(dialog.input_entity, limit=500):
-                        if sent_count >= hourly_quota:
-                            break
-                        c_chk = await db.get_user_settings(user_id)
-                        if not c_chk.get("autodm_enabled", 0):
-                            break
+            # Check duplicate / in-flight
+            if await is_lead_already_contacted_or_in_flight(user_id, lead_id=lead_id_str, username=uname):
+                if lead_id_str or uname:
+                    await db.mark_scraped_lead_contacted(user_id, lead_id_str, uname)
+                continue
 
-                        # Keyword check: If keywords configured, only match messages containing that word!
-                        msg_text = (msg.text or "").strip()
-                        if kw_filters:
-                            msg_lower = msg_text.lower()
-                            if not any(kw in msg_lower for kw in kw_filters):
-                                continue
+            # Reserve in-flight lock
+            reserved_keys = await reserve_lead_in_flight(user_id, lead_id=lead_id_str, username=uname)
 
-                        sender = None
-                        try:
-                            sender = await msg.get_sender()
-                        except Exception:
-                            sender = getattr(msg, "sender", None)
+            # Resolve entity/peer
+            target_peer = None
+            try:
+                if uname:
+                    target_peer = await client.get_input_entity(uname)
+                elif lead_id_str and lead_id_str.isdigit():
+                    target_peer = await client.get_input_entity(int(lead_id_str))
+            except Exception as ent_err:
+                logger.debug(f"Could not resolve entity for lead {uname or lead_id_str}: {ent_err}")
+                await release_and_mark_lead(user_id, reserved_keys, mark_as_contacted=True)
+                await db.mark_scraped_lead_contacted(user_id, lead_id_str, uname)
+                continue
 
-                        if not sender or not isinstance(sender, User):
-                            continue
+            if not target_peer:
+                await release_and_mark_lead(user_id, reserved_keys, mark_as_contacted=True)
+                await db.mark_scraped_lead_contacted(user_id, lead_id_str, uname)
+                continue
 
-                        # STRICT FILTER: Latest Online Only!
-                        if not is_latest_online_user(sender):
-                            continue
+            lead_disp = f"@{uname}" if uname else f"ID: {lead_id_str}"
 
-                        lead_id_str = str(sender.id)
-                        uname = getattr(sender, "username", "") or ""
+            try:
+                await send_dm_to_lead(client, target_peer, dm_text, local_media)
+                sent_count += 1
+                await db.increment_autodm_stats(user_id, sent=1, failed=0)
+                await db.mark_scraped_lead_contacted(user_id, lead_id_str, uname)
 
-                        # Check if already contacted in DB or in-flight right now
-                        if await is_lead_already_contacted_or_in_flight(user_id, lead_id=lead_id_str, username=uname):
-                            continue
+                # Send live log
+                log_client = get_system_client("log")
+                if log_client and log_client.is_connected():
+                    try:
+                        await log_client.send_message(
+                            user_id,
+                            f"⚡ <b>[AUTO DM DELIVERED]</b>\n"
+                            f"• <b>Account:</b> {acc_name}\n"
+                            f"• <b>Lead:</b> {lead_disp}\n"
+                            f"• <b>Source:</b> 10-Min Scraped Lead ✅\n"
+                            f"• <b>Status:</b> Success ✅",
+                            parse_mode="html"
+                        )
+                    except Exception:
+                        pass
 
-                        reserved_keys = await reserve_lead_in_flight(user_id, lead_id=lead_id_str, username=uname)
-                        lead_display = f"@{uname}" if uname else f"ID: {lead_id_str}"
+                # Anti-flood sleep (20-30s)
+                sleep_dur = random.randint(20, 30)
+                await asyncio.sleep(sleep_dur)
 
-                        try:
-                            await send_dm_to_lead(client, sender, dm_text, local_media)
-                            sent_count += 1
-                            await db.increment_autodm_stats(user_id, sent=1, failed=0)
-
-                            # Log delivery
-                            log_client = get_system_client("log")
-                            if log_client and log_client.is_connected():
-                                try:
-                                    kw_tag = " (Keyword Match)" if kw_filters else ""
-                                    await log_client.send_message(
-                                        user_id,
-                                        f"⚡ <b>[AUTO DM DELIVERED]</b>\n"
-                                        f"• <b>Account:</b> {acc_name}\n"
-                                        f"• <b>Lead:</b> {lead_display}\n"
-                                        f"• <b>Source:</b> {group_title} (Last 500 msgs){kw_tag}\n"
-                                        f"• <b>Online Status:</b> Active & Online ✅\n"
-                                        f"• <b>Status:</b> Success ✅",
-                                        parse_mode="html"
-                                    )
-                                except Exception:
-                                    pass
-
-                            sleep_dur = random.randint(25, 45)
-                            await asyncio.sleep(sleep_dur)
-
-                        except PeerFloodError:
-                            logger.warning(f"PeerFlood on account {acc_name}. Backing off.")
-                            fail_count += 1
-                            await db.increment_autodm_stats(user_id, sent=0, failed=1)
-                            return sent_count, fail_count
-                        except FloodWaitError as fe:
-                            logger.warning(f"FloodWait {fe.seconds}s on {acc_name}")
-                            fail_count += 1
-                            await db.increment_autodm_stats(user_id, sent=0, failed=1)
-                            return sent_count, fail_count
-                        except (UserPrivacyRestrictedError, UserNotMutualContactError):
-                            fail_count += 1
-                            await db.increment_autodm_stats(user_id, sent=0, failed=1)
-                        except Exception as e:
-                            logger.debug(f"Auto DM error to user {lead_id_str}: {e}")
-                            fail_count += 1
-                            await db.increment_autodm_stats(user_id, sent=0, failed=1)
-                        finally:
-                            await release_and_mark_lead(user_id, reserved_keys, mark_as_contacted=True)
-
-                except Exception as msg_err:
-                    logger.debug(f"Could not iterate messages from {dialog.id}: {msg_err}")
+            except PeerFloodError:
+                logger.warning(f"PeerFlood on account {acc_name}. Backing off for this round.")
+                fail_count += 1
+                await db.increment_autodm_stats(user_id, sent=0, failed=1)
+                break
+            except FloodWaitError as fe:
+                logger.warning(f"FloodWait {fe.seconds}s on {acc_name}")
+                fail_count += 1
+                await db.increment_autodm_stats(user_id, sent=0, failed=1)
+                break
+            except (UserPrivacyRestrictedError, UserNotMutualContactError):
+                fail_count += 1
+                await db.increment_autodm_stats(user_id, sent=0, failed=1)
+                await db.mark_scraped_lead_contacted(user_id, lead_id_str, uname)
+            except Exception as e:
+                logger.debug(f"Auto DM error to {lead_disp}: {e}")
+                fail_count += 1
+                await db.increment_autodm_stats(user_id, sent=0, failed=1)
+                await db.mark_scraped_lead_contacted(user_id, lead_id_str, uname)
+            finally:
+                await release_and_mark_lead(user_id, reserved_keys, mark_as_contacted=True)
 
     except Exception as acc_err:
-        logger.error(f"Error in Auto DM for account {acc_name}: {acc_err}")
+        logger.error(f"Error in Auto DM dispatch for account {acc_name}: {acc_err}")
     finally:
         if created_here and client:
             try:
@@ -523,9 +515,12 @@ async def run_single_account_autodm_round(
 
 async def run_user_autodm_campaign(bot: Bot, user_id: int):
     """
-    Continuous background daemon that executes Auto DM rounds every hour.
+    Continuous background daemon that executes Auto DM rounds every 10 minutes:
+    1. Scans the latest 500 new messages from joined groups and saves their usernames into the database.
+    2. Sends DMs to the saved active leads from all connected accounts.
+    3. Repeats automatically every 10 minutes when new messages arrive.
     """
-    logger.info(f"Starting Auto DM background loop for user {user_id}")
+    logger.info(f"Starting 10-Minute Auto DM campaign for user {user_id}")
     try:
         while True:
             settings = await db.get_user_settings(user_id)
@@ -554,9 +549,11 @@ async def run_user_autodm_campaign(bot: Bot, user_id: int):
                 )
                 break
 
-            hourly_quota = max(min(int(settings.get("autodm_rate_per_hour", 10) or 10), 10), 1)
+            # Rate per 10-minute round per account (e.g., 12/hr = 2 per 10m round)
+            hourly_rate = int(settings.get("autodm_rate_per_hour", 10) or 10)
+            round_quota = max(1, round(hourly_rate / 6))
 
-            # Local media path handling
+            # Local media caching
             local_media = None
             if dm_media:
                 if os.path.exists(dm_media):
@@ -572,36 +569,55 @@ async def run_user_autodm_campaign(bot: Bot, user_id: int):
                     except Exception as dl_err:
                         logger.warning(f"Could not cache Auto DM media: {dl_err}")
 
-            # Run all accounts in parallel for this hour
+            # STEP 1: Scan 500 new messages from groups and save usernames
+            new_scraped_count = 0
+            mode = settings.get("autodm_target_mode", "groups")
+            if mode == "groups":
+                try:
+                    new_scraped_count = await scan_and_save_group_leads(user_id, accounts, settings, max_messages=500)
+                except Exception as sc_err:
+                    logger.error(f"Error scanning group leads for user {user_id}: {sc_err}")
+
+            # STEP 2: Send DMs from all accounts in parallel
             tasks = [
-                run_single_account_autodm_round(bot, user_id, acc, settings, local_media, hourly_quota)
+                dispatch_single_account_autodm(bot, user_id, acc, settings, local_media, round_quota)
                 for acc in accounts
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            total_sent_this_hr = 0
-            total_fail_this_hr = 0
+            total_sent_this_round = 0
+            total_fail_this_round = 0
             for res in results:
                 if isinstance(res, tuple):
                     s, f = res
-                    total_sent_this_hr += s
-                    total_fail_this_hr += f
+                    total_sent_this_round += s
+                    total_fail_this_round += f
 
-            # Hourly notification
+            # STEP 3: Round notification with scraped stats
+            leads_stats = await db.get_scraped_leads_stats(user_id)
             try:
+                scrape_line = f"• 📥 <b>New Usernames Saved:</b> <code>+{new_scraped_count} Leads</code>\n" if mode == "groups" else ""
+                pool_line = f"• 👥 <b>Total Saved in DB:</b> <code>{leads_stats['total']} Leads</code> (<code>{leads_stats['pending']}</code> Pending)\n" if mode == "groups" else ""
+
                 await bot.send_message(
                     user_id,
-                    f"⚡ <b>Auto DM Hourly Batch Completed!</b>\n\n"
-                    f"• {EMOJI_VERIFIED} Sent this hour: <code>{total_sent_this_hr} DMs</code>\n"
-                    f"• {EMOJI_CROSS} Skipped/Privacy: <code>{total_fail_this_hr}</code>\n"
-                    f"• {EMOJI_CLOCK} Agli round theek <b>1 hour</b> baad automatically shuru hogi...",
+                    f"⚡ <b>10-Minute Auto DM & Scan Round Completed!</b>\n\n"
+                    f"{scrape_line}"
+                    f"{pool_line}"
+                    f"• {EMOJI_VERIFIED} <b>DMs Sent This Round:</b> <code>{total_sent_this_round} DMs</code>\n"
+                    f"• {EMOJI_CROSS} <b>Skipped / Privacy:</b> <code>{total_fail_this_round}</code>\n"
+                    f"• {EMOJI_CLOCK} Agli round theek <b>10 minutes</b> baad new 500 messages scan karke shuru hogi...",
                     parse_mode="HTML"
                 )
             except Exception:
                 pass
 
-            # Sleep 1 hour (3600 seconds) before next hourly batch
-            await asyncio.sleep(3600)
+            # Sleep 10 minutes (600 seconds) with responsive cancellation check
+            for _ in range(120): # 120 x 5s = 600s = 10 mins
+                await asyncio.sleep(5)
+                c_chk = await db.get_user_settings(user_id)
+                if not c_chk or not c_chk.get("autodm_enabled", 0):
+                    break
 
     except asyncio.CancelledError:
         logger.info(f"Auto DM loop cancelled for user {user_id}")
@@ -611,21 +627,27 @@ async def run_user_autodm_campaign(bot: Bot, user_id: int):
         active_autodm_tasks.pop(user_id, None)
 
 
+async def render_autodm_dashboard(user_id: int):
+    settings = await db.get_user_settings(user_id)
+    accounts = await db.get_user_accounts(user_id)
+    leads_stats = await db.get_scraped_leads_stats(user_id)
+    text = get_autodm_dashboard_text(settings, len(accounts), leads_stats)
+    markup = kb.get_autodm_keyboard(
+        enabled=bool(settings.get("autodm_enabled", 0)),
+        rate=settings.get("autodm_rate_per_hour", 10),
+        target_mode=settings.get("autodm_target_mode", "groups"),
+        pending_leads=leads_stats.get("pending", 0)
+    )
+    return text, markup
+
+
 # --- UI HANDLERS ---
 @router.callback_query(F.data == "auto_dm_menu")
 async def btn_autodm_menu(call: CallbackQuery, bot: Bot, state: FSMContext):
     await state.clear()
     await call.answer()
     user_id = call.from_user.id
-    settings = await db.get_user_settings(user_id)
-    accounts = await db.get_user_accounts(user_id)
-
-    text = get_autodm_dashboard_text(settings, len(accounts))
-    markup = kb.get_autodm_keyboard(
-        enabled=bool(settings.get("autodm_enabled", 0)),
-        rate=settings.get("autodm_rate_per_hour", 10),
-        target_mode=settings.get("autodm_target_mode", "groups")
-    )
+    text, markup = await render_autodm_dashboard(user_id)
     try:
         if call.message.photo or call.message.video or call.message.animation or call.message.document:
             try:
@@ -679,15 +701,15 @@ async def btn_toggle_autodm_active(call: CallbackQuery, bot: Bot):
         rate = settings.get("autodm_rate_per_hour", 10)
         mode = settings.get("autodm_target_mode", "groups")
 
-        await call.answer("⚡ Auto DM Started! Instant messaging shuru ho chuka hai.")
+        await call.answer("⚡ 10-Minute Auto DM Started! Scanning 500 msgs...")
         try:
             await bot.send_message(
                 call.message.chat.id,
-                f"⚡ <b>Auto DM (Hourly) Started Successfully!</b>\n\n"
+                f"⚡ <b>10-Minute Auto DM Started Successfully!</b>\n\n"
                 f"• {EMOJI_PLANE} <b>Active Accounts:</b> <code>{len(accounts)}</code>\n"
-                f"• {EMOJI_CLOCK} <b>Hourly Limit:</b> <code>{rate} DMs / hr per account</code>\n"
-                f"• {EMOJI_TARGET} <b>Targeting:</b> <code>{mode.upper()}</code>\n\n"
-                f"💬 <i>Messages automatically har ghante safely bheje jayenge...</i>",
+                f"• {EMOJI_CLOCK} <b>Scan & Send Cycle:</b> <code>Every 10 Minutes</code>\n"
+                f"• {EMOJI_TARGET} <b>Targeting:</b> <code>{mode.upper()}</code>\n"
+                f"• 📥 <b>Process:</b> <i>Har 10 minute me new 500 messages scan honge, usernames save honge aur safe anti-flood DMs dispatch honge.</i>",
                 parse_mode="HTML"
             )
         except Exception:
@@ -701,13 +723,7 @@ async def btn_toggle_autodm_active(call: CallbackQuery, bot: Bot):
                 task.cancel()
         await call.answer("🛑 Auto DM Paused!")
 
-    settings = await db.get_user_settings(user_id)
-    text = get_autodm_dashboard_text(settings, len(accounts))
-    markup = kb.get_autodm_keyboard(
-        enabled=bool(settings.get("autodm_enabled", 0)),
-        rate=settings.get("autodm_rate_per_hour", 10),
-        target_mode=settings.get("autodm_target_mode", "groups")
-    )
+    text, markup = await render_autodm_dashboard(user_id)
     await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
 
 
@@ -787,14 +803,7 @@ async def process_autodm_message(message: Message, bot: Bot, state: FSMContext):
         parse_mode="HTML"
     )
 
-    settings = await db.get_user_settings(user_id)
-    accounts = await db.get_user_accounts(user_id)
-    text = get_autodm_dashboard_text(settings, len(accounts))
-    markup = kb.get_autodm_keyboard(
-        enabled=bool(settings.get("autodm_enabled", 0)),
-        rate=settings.get("autodm_rate_per_hour", 10),
-        target_mode=settings.get("autodm_target_mode", "groups")
-    )
+    text, markup = await render_autodm_dashboard(user_id)
     await bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="HTML")
 
 
@@ -804,12 +813,13 @@ async def btn_set_autodm_rate(call: CallbackQuery):
     await call.answer()
     text = (
         f"╔══════════════════════════╗\n"
-        f"  ⏱ <b>SET HOURLY DM LIMIT</b>\n"
+        f"  ⏱ <b>SET AUTO DM RATE LIMIT</b>\n"
         f"╚══════════════════════════╝\n"
-        f"Har account se <b>1 ghante me kitne DMs</b> send karne hain select karein.\n\n"
-        f"• <b>5 DMs / hr:</b> Ultra-safe (naye accounts ke liye)\n"
-        f"• <b>10 DMs / hr:</b> Recommended & Safe\n"
-        f"• <b>15-20 DMs / hr:</b> Fast promotion (purane warm-up accounts ke liye)\n"
+        f"Har 10 minute me accounts se kitne DMs send karne hain select karein:\n\n"
+        f"• <b>1 DM / 10m (~6/hr):</b> Stealth & Ultra-Safe\n"
+        f"• <b>2 DMs / 10m (~12/hr):</b> Recommended & Fast\n"
+        f"• <b>3 DMs / 10m (~18/hr):</b> High Output\n"
+        f"• <b>5 DMs / 10m (~30/hr):</b> Turbo (Purane Warm-up Accounts)\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"👉 Select rate below:"
     )
@@ -824,7 +834,7 @@ async def btn_select_autodm_rate(call: CallbackQuery, state: FSMContext, bot: Bo
         await call.answer()
         await state.set_state(AutoDMStates.waiting_custom_rate)
         await call.message.edit_text(
-            f"✏️ <b>Enter Custom Hourly Limit:</b>\n\n1 ghante me kitne DMs bhejne hain number enter karein (e.g. <code>8</code> ya <code>12</code>):",
+            f"✏️ <b>Enter Custom Hourly Limit:</b>\n\n1 ghante me kitne DMs bhejne hain number enter karein (e.g. <code>12</code> ya <code>18</code>):",
             parse_mode="HTML",
             reply_markup=kb.get_autodm_back_keyboard()
         )
@@ -833,18 +843,11 @@ async def btn_select_autodm_rate(call: CallbackQuery, state: FSMContext, bot: Bo
     try:
         rate = int(val)
         await db.update_user_setting(user_id, "autodm_rate_per_hour", rate)
-        await call.answer(f"✅ Rate set to {rate} DMs/hour!")
+        await call.answer(f"✅ Rate set to ~{rate} DMs/hour!")
     except Exception:
         pass
 
-    settings = await db.get_user_settings(user_id)
-    accounts = await db.get_user_accounts(user_id)
-    text = get_autodm_dashboard_text(settings, len(accounts))
-    markup = kb.get_autodm_keyboard(
-        enabled=bool(settings.get("autodm_enabled", 0)),
-        rate=settings.get("autodm_rate_per_hour", 10),
-        target_mode=settings.get("autodm_target_mode", "groups")
-    )
+    text, markup = await render_autodm_dashboard(user_id)
     await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
 
 
@@ -853,24 +856,17 @@ async def process_custom_rate(message: Message, bot: Bot, state: FSMContext):
     user_id = message.from_user.id
     try:
         rate = int(message.text.strip())
-        if rate <= 0 or rate > 10:
-            await message.answer("⚠️ Kripya 1 se 10 ke beech number enter karein (Safety rule: Maximum 10 DMs / hour per account allowed hai).")
+        if rate <= 0 or rate > 50:
+            await message.answer("⚠️ Kripya 1 se 50 ke beech number enter karein.")
             return
         await db.update_user_setting(user_id, "autodm_rate_per_hour", rate)
         await state.clear()
-        await message.answer(f"✅ <b>Hourly Limit updated: {rate} DMs / hour!</b>", parse_mode="HTML")
+        await message.answer(f"✅ <b>Hourly Limit updated: ~{rate} DMs / hour!</b>", parse_mode="HTML")
     except ValueError:
         await message.answer("⚠️ Kripya valid number enter karein.")
         return
 
-    settings = await db.get_user_settings(user_id)
-    accounts = await db.get_user_accounts(user_id)
-    text = get_autodm_dashboard_text(settings, len(accounts))
-    markup = kb.get_autodm_keyboard(
-        enabled=bool(settings.get("autodm_enabled", 0)),
-        rate=settings.get("autodm_rate_per_hour", 10),
-        target_mode=settings.get("autodm_target_mode", "groups")
-    )
+    text, markup = await render_autodm_dashboard(user_id)
     await bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="HTML")
 
 
@@ -883,17 +879,94 @@ async def btn_toggle_autodm_mode(call: CallbackQuery, bot: Bot):
     new_mode = "custom_list" if current_mode == "groups" else "groups"
     await db.update_user_setting(user_id, "autodm_target_mode", new_mode)
     
-    label = "Custom Username List" if new_mode == "custom_list" else "Group Members (Auto-Scrape)"
+    label = "Custom Username List" if new_mode == "custom_list" else "Group 500 Msgs (Auto-Scrape & Save)"
     await call.answer(f"Targeting: {label}")
 
-    settings = await db.get_user_settings(user_id)
-    accounts = await db.get_user_accounts(user_id)
-    text = get_autodm_dashboard_text(settings, len(accounts))
-    markup = kb.get_autodm_keyboard(
-        enabled=bool(settings.get("autodm_enabled", 0)),
-        rate=settings.get("autodm_rate_per_hour", 10),
-        target_mode=new_mode
+    text, markup = await render_autodm_dashboard(user_id)
+    await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+
+
+# --- VIEW & EXPORT SCRAPED LEADS ---
+@router.callback_query(F.data == "autodm_view_leads")
+async def btn_autodm_view_leads(call: CallbackQuery):
+    await call.answer()
+    user_id = call.from_user.id
+    stats = await db.get_scraped_leads_stats(user_id)
+    recent_leads = await db.get_all_scraped_leads_list(user_id, limit=8)
+
+    sample_lines = []
+    for l in recent_leads:
+        uname = f"@{l['username']}" if l.get('username') else f"ID: {l.get('lead_id')}"
+        status_tag = "✅ Sent" if l.get('is_contacted') else "⏳ Pending"
+        grp = l.get('group_title') or "Group"
+        sample_lines.append(f"• <b>{uname}</b> — {status_tag} <i>({grp[:20]})</i>")
+
+    sample_disp = "\n".join(sample_lines) if sample_lines else "<i>Abhi koi leads scrape nahi hue hain. 'Start Auto DM' ya 'Scan & Send Now' karein.</i>"
+
+    text = (
+        f"╔══════════════════════════╗\n"
+        f"  👥 <b>SAVED SCRAPED LEADS POOL</b>\n"
+        f"╚══════════════════════════╝\n"
+        f"Groups ke last 500 messages scan karke jo active usernames save kiye gaye hain unki summary:\n\n"
+        f"📊 <b>DATABASE OVERVIEW:</b>\n"
+        f"┌ 📥 <b>Total Scraped Leads:</b> <code>{stats['total']}</code>\n"
+        f"├ ⏳ <b>Pending DMs:</b> <code>{stats['pending']} Leads</code>\n"
+        f"└ ✅ <b>Already Delivered:</b> <code>{stats['contacted']} Leads</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔍 <b>Recent Discovered Leads:</b>\n"
+        f"{sample_disp}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💡 <i>Aap sabhi usernames ko .TXT file me export kar sakte hain ya clear kar sakte hain.</i>"
     )
+
+    kb_leads = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="📥 Export Leads (.TXT)", callback_data="autodm_export_leads"),
+            InlineKeyboardButton(text="🗑 Clear Saved Leads", callback_data="autodm_clear_scraped"),
+        ],
+        [
+            InlineKeyboardButton(text="Back to Auto DM", callback_data="auto_dm_menu")
+        ]
+    ])
+    await call.message.edit_text(text, reply_markup=kb_leads, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "autodm_export_leads")
+async def btn_autodm_export_leads(call: CallbackQuery, bot: Bot):
+    user_id = call.from_user.id
+    leads = await db.get_all_scraped_leads_list(user_id, limit=10000)
+    if not leads:
+        await call.answer("⚠️ Koi leads save nahi hain!", show_alert=True)
+        return
+
+    await call.answer("📄 Exporting leads file...")
+    os.makedirs("assets/exports", exist_ok=True)
+    export_path = f"assets/exports/scraped_leads_{user_id}.txt"
+    with open(export_path, "w", encoding="utf-8") as f:
+        f.write(f"SHADOW ADS BOT - SCRAPED LEADS EXPORT\n")
+        f.write(f"Total Leads: {len(leads)}\n")
+        f.write("="*50 + "\n\n")
+        for idx, l in enumerate(leads, 1):
+            uname = f"@{l['username']}" if l.get('username') else f"ID: {l.get('lead_id')}"
+            status = "DELIVERED" if l.get('is_contacted') else "PENDING"
+            grp = l.get('group_title') or "Group"
+            f.write(f"{idx}. {uname} | Name: {l.get('first_name', '')} | Status: {status} | Source: {grp}\n")
+
+    doc = FSInputFile(export_path, filename=f"scraped_leads_{user_id}.txt")
+    await bot.send_document(
+        call.message.chat.id,
+        document=doc,
+        caption=f"📁 <b>Scraped Leads Export</b>\n\nTotal <code>{len(leads)}</code> leads successfully exported!",
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "autodm_clear_scraped")
+async def btn_autodm_clear_scraped(call: CallbackQuery):
+    user_id = call.from_user.id
+    await db.clear_scraped_leads(user_id)
+    await call.answer("🗑 Saved Leads pool clear kar diya gaya!", show_alert=True)
+    text, markup = await render_autodm_dashboard(user_id)
     await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
 
 
@@ -927,14 +1000,7 @@ async def process_custom_targets(message: Message, bot: Bot, state: FSMContext):
 
     await message.answer(f"✅ <b>{len(targets)} Target Leads successfully saved!</b>", parse_mode="HTML")
 
-    settings = await db.get_user_settings(user_id)
-    accounts = await db.get_user_accounts(user_id)
-    text = get_autodm_dashboard_text(settings, len(accounts))
-    markup = kb.get_autodm_keyboard(
-        enabled=bool(settings.get("autodm_enabled", 0)),
-        rate=settings.get("autodm_rate_per_hour", 10),
-        target_mode="custom_list"
-    )
+    text, markup = await render_autodm_dashboard(user_id)
     await bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="HTML")
 
 
@@ -950,7 +1016,7 @@ async def btn_set_autodm_keywords(call: CallbackQuery, state: FSMContext):
         f"╔══════════════════════════╗\n"
         f"  🔍 <b>GROUP CHAT KEYWORD FILTER</b>\n"
         f"╚══════════════════════════╝\n"
-        f"Group chats ke <b>last 500 messages</b> me se ONLY unhi users ko DM jayega jo aapka specific word/keyword likhenge!\n\n"
+        f"Group chats ke <b>last 500 messages</b> me se ONLY unhi users ko save aur DM kiya jayega jo aapka specific word/keyword likhenge!\n\n"
         f"• <b>Current Keywords:</b> <code>{current_kws or 'None (All active chatters)'}</code>\n\n"
         f"💡 <i>Example keywords:</i>\n"
         f"<code>buy\nsell\nescrow\nprice\nneed</code>\n\n"
@@ -968,25 +1034,18 @@ async def process_autodm_keywords(message: Message, bot: Bot, state: FSMContext)
     if raw.lower() in ("clear", "off", "none", "disable", "remove"):
         await db.update_user_setting(user_id, "autodm_keywords", "")
         await state.clear()
-        await message.answer("✅ <b>Keyword Filter Disabled!</b> Ab last 500 msgs ke sabhi active online chatters target honge.", parse_mode="HTML")
+        await message.answer("✅ <b>Keyword Filter Disabled!</b> Ab last 500 msgs ke sabhi active chatters target honge.", parse_mode="HTML")
     else:
         kws = [k.strip().lower() for k in raw.replace(",", "\n").split("\n") if k.strip()]
         val = "\n".join(kws)
         await db.update_user_setting(user_id, "autodm_keywords", val)
         await state.clear()
         await message.answer(
-            f"✅ <b>Word Filter Saved!</b>\n\nAb GC ke last 500 messages me se ONLY in words ko likhne wale online users ko DM jayega:\n<code>{', '.join(kws)}</code>",
+            f"✅ <b>Word Filter Saved!</b>\n\nAb GC ke last 500 messages me se ONLY in words ko likhne wale users ko DM jayega:\n<code>{', '.join(kws)}</code>",
             parse_mode="HTML"
         )
 
-    settings = await db.get_user_settings(user_id)
-    accounts = await db.get_user_accounts(user_id)
-    text = get_autodm_dashboard_text(settings, len(accounts))
-    markup = kb.get_autodm_keyboard(
-        enabled=bool(settings.get("autodm_enabled", 0)),
-        rate=settings.get("autodm_rate_per_hour", 10),
-        target_mode=settings.get("autodm_target_mode", "groups")
-    )
+    text, markup = await render_autodm_dashboard(user_id)
     await bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="HTML")
 
 
@@ -1028,18 +1087,11 @@ async def process_autodm_autoreply(message: Message, bot: Bot, state: FSMContext
             parse_mode="HTML"
         )
 
-    settings = await db.get_user_settings(user_id)
-    accounts = await db.get_user_accounts(user_id)
-    text = get_autodm_dashboard_text(settings, len(accounts))
-    markup = kb.get_autodm_keyboard(
-        enabled=bool(settings.get("autodm_enabled", 0)),
-        rate=settings.get("autodm_rate_per_hour", 10),
-        target_mode=settings.get("autodm_target_mode", "groups")
-    )
+    text, markup = await render_autodm_dashboard(user_id)
     await bot.send_message(message.chat.id, text, reply_markup=markup, parse_mode="HTML")
 
 
-# --- SEND 1-HR BATCH NOW ---
+# --- SCAN & SEND NOW (MANUAL TRIGGER) ---
 @router.callback_query(F.data == "autodm_send_now")
 async def btn_autodm_send_now(call: CallbackQuery, bot: Bot):
     user_id = call.from_user.id
@@ -1056,33 +1108,47 @@ async def btn_autodm_send_now(call: CallbackQuery, bot: Bot):
         await call.answer("⚠️ Pehle 'Set DM Message' set karein!", show_alert=True)
         return
 
-    await call.answer("🚀 1-Hour Batch execution started in background!")
+    await call.answer("🚀 500 Messages Scan aur DM dispatch shuru ho raha hai...")
     await bot.send_message(
         call.message.chat.id,
-        f"🚀 <b>Manual 1-Hour DM Batch Started!</b>\n\nSabhi {len(accounts)} accounts se DMs bhejna shuru kar diya gaya hai...",
+        f"🚀 <b>Manual 10-Min Scan & DM Batch Started!</b>\n\n"
+        f"1. Groups ke 500 new messages scan karke usernames save kiye ja rahe hain...\n"
+        f"2. Sabhi {len(accounts)} accounts se targeted DMs dispatch ho rahe hain...",
         parse_mode="HTML"
     )
 
-    hourly_quota = max(min(int(settings.get("autodm_rate_per_hour", 10) or 10), 10), 1)
+    hourly_rate = int(settings.get("autodm_rate_per_hour", 10) or 10)
+    round_quota = max(1, round(hourly_rate / 6))
     local_media = None
     if dm_media and os.path.exists(dm_media):
         local_media = dm_media
 
-    # Run single round in background
     async def run_manual_batch():
+        new_scraped = 0
+        mode = settings.get("autodm_target_mode", "groups")
+        if mode == "groups":
+            try:
+                new_scraped = await scan_and_save_group_leads(user_id, accounts, settings, max_messages=500)
+            except Exception as e:
+                logger.error(f"Manual scan error: {e}")
+
         tasks = [
-            run_single_account_autodm_round(bot, user_id, acc, settings, local_media, hourly_quota)
+            dispatch_single_account_autodm(bot, user_id, acc, settings, local_media, round_quota)
             for acc in accounts
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         s_total = sum(r[0] for r in results if isinstance(r, tuple))
         f_total = sum(r[1] for r in results if isinstance(r, tuple))
+        leads_stats = await db.get_scraped_leads_stats(user_id)
+
         try:
             await bot.send_message(
                 user_id,
-                f"✅ <b>Manual DM Batch Completed!</b>\n\n"
-                f"• Sent: <code>{s_total} DMs</code>\n"
-                f"• Skipped/Privacy: <code>{f_total}</code>",
+                f"✅ <b>Manual Batch Completed!</b>\n\n"
+                f"• 📥 <b>New Usernames Saved:</b> <code>+{new_scraped} Leads</code>\n"
+                f"• 👥 <b>Total Saved in DB:</b> <code>{leads_stats['total']} Leads</code> (<code>{leads_stats['pending']}</code> Pending)\n"
+                f"• 📤 <b>Sent This Batch:</b> <code>{s_total} DMs</code>\n"
+                f"• ⚠️ <b>Skipped/Privacy:</b> <code>{f_total}</code>",
                 parse_mode="HTML"
             )
         except Exception:
@@ -1096,7 +1162,9 @@ async def btn_autodm_send_now(call: CallbackQuery, bot: Bot):
 async def btn_autodm_reset_leads(call: CallbackQuery):
     user_id = call.from_user.id
     await db.clear_contacted_leads(user_id)
-    await call.answer("♻️ Contacted Leads database clear ho gaya! Ab sabhi leads ko dobara DM kiya ja sakta hai.", show_alert=True)
+    await call.answer("♻️ Contacted Leads database clear ho gaya! Ab sabhi leads ko dobara DM bheja ja sakta hai.", show_alert=True)
+    text, markup = await render_autodm_dashboard(user_id)
+    await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
 
 
 # --- AUTO-RESUME ON STARTUP ---
@@ -1107,7 +1175,7 @@ async def resume_active_autodm_campaigns(bot: Bot):
             running_users = await db.get_active_autodm_users()
             for uid in running_users:
                 if uid not in active_autodm_tasks or active_autodm_tasks[uid].done():
-                    logger.info(f"Auto-resuming Auto DM campaign for user {uid}...")
+                    logger.info(f"Auto-resuming 10-Minute Auto DM campaign for user {uid}...")
                     task = asyncio.create_task(run_user_autodm_campaign(bot, uid))
                     active_autodm_tasks[uid] = task
     except Exception as e:

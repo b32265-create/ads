@@ -127,8 +127,9 @@ def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict,
     mgr_status = f"{EMOJI_VERIFIED} ON" if mgr_enabled else f"{EMOJI_PAUSED} OFF"
 
     autodm_enabled = settings.get("autodm_enabled", 0)
-    autodm_rate = settings.get("autodm_rate_per_hour", 10)
-    autodm_status = f"{EMOJI_RUNNING} ON ({autodm_rate}/hr)" if autodm_enabled else f"{EMOJI_PAUSED} OFF"
+    autodm_rate = settings.get("autodm_rate_per_round") or settings.get("autodm_rate_per_hour") or 3
+    autodm_interval = settings.get("autodm_interval_minutes", 10)
+    autodm_status = f"{EMOJI_RUNNING} ON ({autodm_rate}/{autodm_interval}m)" if autodm_enabled else f"{EMOJI_PAUSED} OFF"
 
     return (
         f"╔══════════════════════════╗\n"
@@ -146,7 +147,7 @@ def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict,
         f"├ {EMOJI_MOON} <b>Progress Cycles:</b> <code>{cycles_done} / {max_c_str}</code>\n"
         f"├ {EMOJI_CLOCK} <b>Schedule Window:</b> <code>{sched_status}</code>\n"
         f"├ {EMOJI_USER} <b>Manager Account:</b> <code>{mgr_status}</code>\n"
-        f"├ {EMOJI_FLASH} <b>Auto DM (Hourly):</b> <code>{autodm_status}</code>\n"
+        f"├ {EMOJI_FLASH} <b>Auto DM (10m Scan):</b> <code>{autodm_status}</code>\n"
         f"└ {status_display}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"💡 <i>Niche diye gaye control panel se action select karein:</i>"
