@@ -473,19 +473,28 @@ async def dispatch_single_account_autodm(
                 await db.increment_autodm_stats(user_id, sent=1, failed=0)
                 await db.mark_scraped_lead_contacted(user_id, lead_id_str, uname)
 
-                # Send live log
+                # Send real-time live progress notification directly to the user
+                now_str = datetime.now().strftime("%H:%M:%S")
+                live_text = (
+                    f"⚡ <b>[LIVE DM DELIVERED]</b> ✅\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"• 📱 <b>Sender Account:</b> <code>{acc_name}</code>\n"
+                    f"• 👤 <b>Target Lead:</b> <b>{lead_disp}</b>\n"
+                    f"• 💬 <b>Message:</b> <code>{clean_html_preview(dm_text, 50) or '(Ad Media)'}</code>\n"
+                    f"• ⏱ <b>Time:</b> <code>{now_str}</code>\n"
+                    f"• 🎯 <b>Source:</b> <code>5-Min Scraped Active Chatter</code> ✅\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━"
+                )
+                try:
+                    await bot.send_message(user_id, live_text, parse_mode="HTML")
+                except Exception:
+                    pass
+
+                # Also send via system log account if active
                 log_client = get_system_client("log")
                 if log_client and log_client.is_connected():
                     try:
-                        await log_client.send_message(
-                            user_id,
-                            f"⚡ <b>[AUTO DM DELIVERED]</b>\n"
-                            f"• <b>Account:</b> {acc_name}\n"
-                            f"• <b>Lead:</b> {lead_disp}\n"
-                            f"• <b>Source:</b> 10-Min Scraped Lead ✅\n"
-                            f"• <b>Status:</b> Success ✅",
-                            parse_mode="html"
-                        )
+                        await log_client.send_message(user_id, live_text, parse_mode="HTML")
                     except Exception:
                         pass
 
@@ -498,16 +507,43 @@ async def dispatch_single_account_autodm(
                 logger.warning(f"PeerFlood on account {acc_name}. Backing off for this round.")
                 fail_count += 1
                 await db.increment_autodm_stats(user_id, sent=0, failed=1)
+                try:
+                    await bot.send_message(
+                        user_id,
+                        f"⏳ <b>[LIVE STATUS]</b> Account <code>{acc_name}</code> par Telegram rate limit (PeerFlood) aaya hai. Safety ke liye iss round me isse pause kiya gaya hai.",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
                 break
             except FloodWaitError as fe:
                 logger.warning(f"FloodWait {fe.seconds}s on {acc_name}")
                 fail_count += 1
                 await db.increment_autodm_stats(user_id, sent=0, failed=1)
+                try:
+                    await bot.send_message(
+                        user_id,
+                        f"⏳ <b>[LIVE STATUS]</b> Account <code>{acc_name}</code> par FloodWait ({fe.seconds}s) aaya hai. Iss round me safe rest par hai.",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
                 break
             except (UserPrivacyRestrictedError, UserNotMutualContactError):
                 fail_count += 1
                 await db.increment_autodm_stats(user_id, sent=0, failed=1)
                 await db.mark_scraped_lead_contacted(user_id, lead_id_str, uname)
+                try:
+                    await bot.send_message(
+                        user_id,
+                        f"⚠️ <b>[LIVE DM SKIPPED]</b>\n"
+                        f"• 📱 <b>Account:</b> <code>{acc_name}</code>\n"
+                        f"• 👤 <b>Lead:</b> <code>{lead_disp}</code>\n"
+                        f"• ℹ️ <b>Reason:</b> <i>User privacy setting prevents DMs from non-contacts. Auto-skipped.</i>",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 logger.debug(f"Auto DM error to {lead_disp}: {e}")
                 fail_count += 1
@@ -589,6 +625,17 @@ async def run_user_autodm_campaign(bot: Bot, user_id: int):
             mode = settings.get("autodm_target_mode", "groups")
             try:
                 new_scraped_count = await scan_and_save_group_leads(user_id, accounts, settings, max_messages=500)
+                if new_scraped_count > 0:
+                    try:
+                        await bot.send_message(
+                            user_id,
+                            f"📥 <b>[LIVE SCAN PROGRESS]</b>\n"
+                            f"• 🔍 Groups ke 500 naye messages scan karke <b>+{new_scraped_count} naye leads</b> database pool me save kar liye gaye hain!\n"
+                            f"• 🚀 Sabhi <code>{len(accounts)}</code> accounts se real-time DM dispatch shuru ho raha hai...",
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
             except Exception as sc_err:
                 logger.error(f"Error scanning group leads for user {user_id}: {sc_err}")
 
