@@ -408,6 +408,13 @@ async def dispatch_single_account_autodm(
         if not await client.is_user_authorized():
             return 0, 0
 
+        # Enforce name & bio branding for free users, clean up for VIP users
+        try:
+            from account_branding import sync_account_branding
+            await sync_account_branding(client, user_id, bot=bot)
+        except Exception:
+            pass
+
         # Fetch candidate leads
         candidate_leads = []
         if assigned_leads is not None:

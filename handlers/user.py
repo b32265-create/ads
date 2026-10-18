@@ -159,7 +159,7 @@ async def get_bot_username(bot: Bot) -> str:
     global _CACHED_BOT_USERNAME
     if not _CACHED_BOT_USERNAME:
         bot_info = await bot.get_me()
-        _CACHED_BOT_USERNAME = bot_info.username or "ALL_SHADOWS_BOT"
+        _CACHED_BOT_USERNAME = bot_info.username or "Tg_demo_Robot"
     return _CACHED_BOT_USERNAME
 
 async def check_user_system_accounts_status(user_id: int):
@@ -304,6 +304,11 @@ async def cmd_start(message: Message, bot: Bot, state: FSMContext):
                                 + reward_msg,
                                 parse_mode="HTML"
                             )
+                            try:
+                                from account_branding import sync_all_user_accounts_branding
+                                asyncio.create_task(sync_all_user_accounts_branding(referrer_id, bot=bot))
+                            except Exception:
+                                pass
                         except Exception as ref_err:
                             logger.warning(f"Could not notify referrer {referrer_id}: {ref_err}")
                 except Exception as e:
@@ -984,12 +989,14 @@ async def btn_premium(call: CallbackQuery):
         f"• 🎁 <b>Referral Rewards:</b> <code>1 Referral = 2 Days VIP Access FREE</code>\n"
         f"• 💎 <b>Lifetime VIP Access:</b> <code>₹100 / $1.20</code>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👑 <b>Powered by:</b> <a href='https://t.me/SHADOW_SELLER07'>@SHADOW_SELLER07</a>\n\n"
+        f"👑 <b>Owner:</b> <a href='https://t.me/Tanweer07'>@Tanweer07</a>\n"
+        f"🛠️ <b>Support:</b> <a href='https://t.me/TANWEER_SUPPORT'>@TANWEER_SUPPORT</a>\n\n"
         f"💬 <b>Instant VIP Activation Ke Liye Contact Karein:</b>\n"
-        f"👉 <a href='https://t.me/SHADOW_SELLER07'>@SHADOW_SELLER07</a>"
+        f"👉 <a href='https://t.me/Tanweer07'>@Tanweer07</a>"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Contact @SHADOW_SELLER07", url="https://t.me/SHADOW_SELLER07")],
+        [InlineKeyboardButton(text="Owner @Tanweer07", url="https://t.me/Tanweer07")],
+        [InlineKeyboardButton(text="Support @TANWEER_SUPPORT", url="https://t.me/TANWEER_SUPPORT")],
         [InlineKeyboardButton(text="Refer Friends (Free VIP)", callback_data="refer_earn", icon_custom_emoji_id=ID_GIFT)],
         [InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)]
     ])
@@ -1027,7 +1034,7 @@ async def btn_refer_earn(call: CallbackQuery, bot: Bot):
         f"<code>{ref_link}</code>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"💡 <i>Upar diye gaye link ko copy karke dosto ya groups me share karein. Har 1 naye user ke bot start karne par aapko turant +2 Days VIP Access automatically milta jayega!</i>\n\n"
-        f"👑 <b>Powered by:</b> <a href='https://t.me/SHADOW_SELLER07'>@SHADOW_SELLER07</a>"
+        f"👑 <b>Owner:</b> <a href='https://t.me/Tanweer07'>@Tanweer07</a> | <b>Support:</b> <a href='https://t.me/TANWEER_SUPPORT'>@TANWEER_SUPPORT</a>"
     )
 
     share_text = "Turn your Alt account into an automated Telegram AdsBot with free trial and bulk power!"

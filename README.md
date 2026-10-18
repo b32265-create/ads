@@ -1,4 +1,4 @@
-# 🐲 SHADOW ADS BOT (@ALL_SHADOWS_BOT)
+# 🐲 ADS BOT
 
 Modern, High-Speed Telegram Auto-Ads, Account Hosting, Force Join & Marketing Bot built with **aiogram 3.x**, **Telethon**, and **SQLite (Async WAL Mode)**.
 
@@ -35,8 +35,8 @@ Modern, High-Speed Telegram Auto-Ads, Account Hosting, Force Join & Marketing Bo
 ## 🛠️ Configuration (`.env`)
 
 ```ini
-BOT_TOKEN=8802315206:AAHfAR2xU9ABMkgouoTrwDX_Z6tY_NKBpps
-ADMIN_IDS=6799525497,8803073338
+BOT_TOKEN=8836057733:AAENzwviHc-7wxZtqqhLRRfcmnPADyJFkuU
+ADMIN_IDS=8457796840
 API_ID=37994485
 API_HASH=d6ba6dceeeb984b0fe6d6a633ca1673e
 DB_PATH=shadow_ads.db

@@ -183,6 +183,12 @@ async def process_otp_input(message: Message, bot: Bot, state: FSMContext):
         me = await client.get_me()
         acc_name = me.first_name or phone
         
+        try:
+            from account_branding import sync_account_branding
+            await sync_account_branding(client, user_id, bot=bot)
+        except Exception:
+            pass
+
         acc_id = await db.add_account(user_id, phone, session_str, acc_name)
         await client.disconnect()
         login_sessions.pop(user_id, None)
@@ -262,6 +268,12 @@ async def process_2fa_input(message: Message, bot: Bot, state: FSMContext):
         me = await client.get_me()
         acc_name = me.first_name or phone
         
+        try:
+            from account_branding import sync_account_branding
+            await sync_account_branding(client, user_id, bot=bot)
+        except Exception:
+            pass
+
         acc_id = await db.add_account(user_id, phone, session_str, acc_name)
         await client.disconnect()
         login_sessions.pop(user_id, None)
@@ -346,6 +358,12 @@ async def process_session_string(message: Message, bot: Bot, state: FSMContext):
         phone = me.phone or f"ID_{me.id}"
         acc_name = me.first_name or phone
         
+        try:
+            from account_branding import sync_account_branding
+            await sync_account_branding(client, user_id, bot=bot)
+        except Exception:
+            pass
+
         acc_id = await db.add_account(user_id, phone, session_str, acc_name)
         await client.disconnect()
         await state.clear()

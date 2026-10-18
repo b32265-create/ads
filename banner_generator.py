@@ -97,7 +97,7 @@ def generate_user_welcome_banner(
         draw.text((485, 292), display_user, fill=(255, 255, 255), font=user_font)
 
         # 5. Powered by watermark
-        draw.text((680, 375), "POWERED BY @SHADOW_SELLER07", fill=(150, 150, 150), font=credit_font)
+        draw.text((680, 375), "POWERED BY @Tanweer07", fill=(150, 150, 150), font=credit_font)
 
         # Save optimized PNG
         base.save(out_path, "PNG", optimize=True)

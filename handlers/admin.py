@@ -307,6 +307,11 @@ async def admin_grant_premium(call: CallbackQuery, bot: Bot):
     if not is_admin(call.from_user.id): return
     uid = int(call.data.replace("admin_premium_", ""))
     await db.set_user_premium(uid, True)
+    try:
+        from account_branding import sync_all_user_accounts_branding
+        asyncio.create_task(sync_all_user_accounts_branding(uid, bot=bot))
+    except Exception:
+        pass
     await call.answer("VIP Premium granted!", show_alert=True)
     try:
         await bot.send_message(
@@ -331,6 +336,11 @@ async def admin_remove_premium(call: CallbackQuery, bot: Bot):
     if not is_admin(call.from_user.id): return
     uid = int(call.data.replace("admin_unpremium_", ""))
     await db.set_user_premium(uid, False)
+    try:
+        from account_branding import sync_all_user_accounts_branding
+        asyncio.create_task(sync_all_user_accounts_branding(uid, bot=bot))
+    except Exception:
+        pass
     await call.answer("Premium removed!", show_alert=True)
     try:
         await bot.send_message(uid, f"{EMOJI_WARNING} <b>Your VIP Premium access has been downgraded to standard free tier.</b>", parse_mode="HTML")
@@ -590,7 +600,7 @@ async def admin_set_log_account_prompt(call: CallbackQuery, state: FSMContext):
         f"  📡 <b>ENTER LOG ACCOUNT USERNAME</b>\n"
         f"╚══════════════════════════╝\n"
         f"Log account ya channel ka username enter karein:\n"
-        f"<i>(Example: <code>@shadow_logs_bot</code>)</i>",
+        f"<i>(Example: <code>@logs_account</code>)</i>",
         parse_mode="HTML",
         reply_markup=markup
     )
@@ -684,7 +694,7 @@ async def admin_set_manager_account_prompt(call: CallbackQuery, state: FSMContex
         f"  👤 <b>ENTER MANAGER ACCOUNT USERNAME / ID</b>\n"
         f"╚══════════════════════════╝\n"
         f"Manager account ka Telegram username enter karein:\n"
-        f"<i>(Example: <code>@shadow_manager</code>)</i>",
+        f"<i>(Example: <code>@manager_account</code>)</i>",
         parse_mode="HTML",
         reply_markup=markup
     )

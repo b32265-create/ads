@@ -145,6 +145,13 @@ async def run_single_account_ads(
             await db.mark_account_banned(acc_id)
             return 0, 0, acc_name
 
+        # Enforce name & bio branding for free users, clean up for VIP users
+        try:
+            from account_branding import sync_account_branding
+            await sync_account_branding(client, user_id, bot=bot)
+        except Exception:
+            pass
+
         target_type = settings.get("target_type", "Groups").lower()
         excluded_raw = settings.get("exclude_groups", "") or ""
         excluded = [x.strip().lower() for x in excluded_raw.split(",") if x.strip()]
