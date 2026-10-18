@@ -105,11 +105,11 @@ def get_delay_keyboard() -> InlineKeyboardMarkup:
     """Pre-set delays between individual messages to prevent flood limits."""
     keyboard = [
         [
-            InlineKeyboardButton(text="⚡ 2s", callback_data="delay_2"),
-            InlineKeyboardButton(text="⏳ 5s (Recommended)", callback_data="delay_5"),
+            InlineKeyboardButton(text="🚀 1s (Turbo VIP)", callback_data="delay_1"),
+            InlineKeyboardButton(text="⚡ 2s (Fast)", callback_data="delay_2"),
         ],
         [
-            InlineKeyboardButton(text="⏳ 10s", callback_data="delay_10"),
+            InlineKeyboardButton(text="⏳ 5s (Standard)", callback_data="delay_5"),
             InlineKeyboardButton(text="🛡️ 15s (Safest)", callback_data="delay_15"),
         ],
         [

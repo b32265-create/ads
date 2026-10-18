@@ -66,7 +66,7 @@ async def btn_add_account(call: CallbackQuery):
             f"Aapke account me already <b>{current_count}</b> accounts active hain.\n\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"🚀 <b>Upgrade to VIP Premium:</b>\n"
-            f"Unlimited accounts host karne ke liye aur faster 2s message delay ke liye Premium join karein!"
+            f"50+ accounts host karne ke liye, 1s delay, 1m interval aur clean bio ke liye VIP join karein!"
         )
         prem_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💎 Upgrade to Premium", callback_data="premium")],

@@ -970,29 +970,39 @@ async def process_schedule_end(message: Message, state: FSMContext):
 async def btn_premium(call: CallbackQuery):
     await call.answer()
     text = (
-        f"╔══════════════════════════╗\n"
-        f"  {EMOJI_DIAMOND} <b>ATOMIC VIP MEMBERSHIP</b> {EMOJI_ROCKET}\n"
-        f"╚══════════════════════════╝\n"
-        f"Automate your telegram marketing at scale with VIP power:\n\n"
-        f"⚡ <b>Unlimited Hosted Accounts</b>\n"
-        f"   └ <i>Host 10, 50, ya 100+ accounts bina kisi limit ke</i>\n\n"
-        f"🛡️ <b>Anti-Ban Matrix & Rotation</b>\n"
-        f"   └ <i>Smart account switching & FloodWait evasion</i>\n\n"
-        f"🚀 <b>Ultra-Fast 2s Message Delay</b>\n"
-        f"   └ <i>Turbocharged broadcast speed across target chats</i>\n\n"
-        f"🌐 <b>Auto-Joiner & Group Targeting</b>\n"
-        f"   └ <i>Accounts se automatically public & private groups join karein</i>\n\n"
-        f"👑 <b>Priority 24/7 Cloud Engine</b>\n"
-        f"   └ <i>Dedicated high-speed background worker pipeline</i>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{EMOJI_MONEY} <b>VIP PRICING & REWARDS:</b>\n"
-        f"• 🎁 <b>Referral Rewards:</b> <code>1 Referral = 2 Days VIP Access FREE</code>\n"
-        f"• 💎 <b>Lifetime VIP Access:</b> <code>₹100 / $1.20</code>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"👑 <b>Owner:</b> <a href='https://t.me/Tanweer07'>@Tanweer07</a>\n"
-        f"🛠️ <b>Support:</b> <a href='https://t.me/TANWEER_SUPPORT'>@TANWEER_SUPPORT</a>\n\n"
-        f"💬 <b>Instant VIP Activation Ke Liye Contact Karein:</b>\n"
-        f"👉 <a href='https://t.me/Tanweer07'>@Tanweer07</a>"
+        f"""╔══════════════════════════╗
+  💎 <b>ATOMIC VIP MEMBERSHIP</b> 🚀
+╚══════════════════════════╝
+Automate your Telegram marketing at maximum scale with VIP power:
+
+📱 <b>Host 50+ Accounts Without Limit</b>
+   └ <i>Host 10, 50, ya 100+ accounts bina kisi restriction ke</i>
+
+⏱️ <b>Minimum Cycle Interval: 1 Minute</b>
+   └ <i>Non-stop automated campaign rotation every 60 seconds</i>
+
+⚡ <b>Minimum Message Delay: 1 Second</b>
+   └ <i>Ultra-fast turbocharged dispatch speed across target chats</i>
+
+🌐 <b>Auto-Join Public & Private Groups</b>
+   └ <i>Accounts se automatically unlimited channels/groups join karein</i>
+
+🛡️ <b>No Bio Link & Zero Ad Promotion</b>
+   └ <i>Aapke accounts 100% clean rahenge, name/bio me koi bot promo nahi aayega</i>
+
+👑 <b>Dedicated 24/7 Customer Support</b>
+   └ <i>Priority instant help & setup assistance 24/7 available</i>
+
+━━━━━━━━━━━━━━━━━━━━━
+💸 <b>VIP PRICING & REWARDS:</b>
+• 🎁 <b>Referral Rewards:</b> <code>1 Referral = 2 Days VIP Access FREE</code>
+• 💎 <b>Lifetime VIP Access:</b> <code>₹100 / $1.20</code>
+━━━━━━━━━━━━━━━━━━━━━
+👑 <b>Owner:</b> <a href='https://t.me/Tanweer07'>@Tanweer07</a>
+🛠️ <b>Support:</b> <a href='https://t.me/TANWEER_SUPPORT'>@TANWEER_SUPPORT</a>
+
+💬 <b>Instant VIP Activation Ke Liye Contact Karein:</b>
+👉 <a href='https://t.me/Tanweer07'>@Tanweer07</a>"""
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👑 Owner @Tanweer07", url="https://t.me/Tanweer07")],
