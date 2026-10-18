@@ -55,7 +55,7 @@ def is_admin(user_id: int) -> bool:
 def get_admin_panel_text() -> str:
     return (
         f"╔══════════════════════════╗\n"
-        f"  👨‍💻 <b>SHADOW COMMAND CENTER</b> ⚡\n"
+        f"  👨‍💻 <b>ADMIN COMMAND CENTER</b> ⚡\n"
         f"╚══════════════════════════╝\n"
         f"{EMOJI_FLASH} <i>Full administrator control over user tiers, channels, broadcast, & database settings.</i>"
     )

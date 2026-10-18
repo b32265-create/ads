@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: shadow-ads-bot
+    name: atomic-ads-bot
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py

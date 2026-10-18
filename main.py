@@ -81,7 +81,7 @@ async def start_health_server():
         app = web.Application()
 
         async def health_handler(request):
-            return web.Response(text="Shadow Ads Bot is alive and running!", status=200)
+            return web.Response(text="Atomic Ads Bot is alive and running!", status=200)
 
         app.router.add_get("/", health_handler)
         app.router.add_get("/health", health_handler)

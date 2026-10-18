@@ -1032,7 +1032,7 @@ async def btn_autodm_export_leads(call: CallbackQuery, bot: Bot):
     os.makedirs("assets/exports", exist_ok=True)
     export_path = f"assets/exports/scraped_leads_{user_id}.txt"
     with open(export_path, "w", encoding="utf-8") as f:
-        f.write(f"SHADOW ADS BOT - SCRAPED LEADS EXPORT\n")
+        f.write(f"ATOMIC ADS BOT - SCRAPED LEADS EXPORT\n")
         f.write(f"Total Leads: {len(leads)}\n")
         f.write("="*50 + "\n\n")
         for idx, l in enumerate(leads, 1):

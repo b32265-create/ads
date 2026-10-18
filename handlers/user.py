@@ -133,7 +133,7 @@ def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict,
 
     return (
         f"╔══════════════════════════╗\n"
-        f"  {EMOJI_FIRE} <b>SHADOW ADS AUTOMATION</b> 🐲\n"
+        f"  {EMOJI_FIRE} <b>ATOMIC ADS AUTOMATION</b> 🐲\n"
         f"╚══════════════════════════╝\n"
         f"👤 <b>User:</b> {first_name} | {tier_badge}\n"
         f"🤖 <b>Bot:</b> @{bot_username}\n"
@@ -209,7 +209,7 @@ def build_accounts_verification_ui(log_acc: str, has_log: bool, mgr_acc: str, ha
         f"╔══════════════════════════╗\n"
         f"  🔐 <b>MANDATORY ACTIVATION REQUIRED</b>\n"
         f"╚══════════════════════════╝\n"
-        f"Shadow Ads Bot ko use karne ke liye aapko official <b>Log Account</b> aur <b>Manager Account</b> ko direct message (e.g. <i>'Hi'</i>) bhejna <b>compulsory</b> hai.\n\n"
+        f"Bot ko use karne ke liye aapko official <b>Log Account</b> aur <b>Manager Account</b> ko direct message (e.g. <i>'Hi'</i>) bhejna <b>compulsory</b> hai.\n\n"
         f"🛡️ <b>Kyu compulsory hai?</b>\n"
         f"Telegram peer-flood restriction ke kaaran, jab tak aap un accounts ko pehle message nahi karte, tab tak bot aapko live ad delivery logs aur lead inquiries forward nahi kar sakta.\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
@@ -971,7 +971,7 @@ async def btn_premium(call: CallbackQuery):
     await call.answer()
     text = (
         f"╔══════════════════════════╗\n"
-        f"  {EMOJI_DIAMOND} <b>SHADOW VIP MEMBERSHIP</b> {EMOJI_ROCKET}\n"
+        f"  {EMOJI_DIAMOND} <b>ATOMIC VIP MEMBERSHIP</b> {EMOJI_ROCKET}\n"
         f"╚══════════════════════════╝\n"
         f"Automate your telegram marketing at scale with VIP power:\n\n"
         f"⚡ <b>Unlimited Hosted Accounts</b>\n"
