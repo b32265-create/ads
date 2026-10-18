@@ -1,6 +1,13 @@
+import os
+import sys
+
+# Ensure current script directory is in Python path for cloud platforms like Render
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if _BASE_DIR not in sys.path:
+    sys.path.insert(0, _BASE_DIR)
+
 import asyncio
 import logging
-import sys
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
