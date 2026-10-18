@@ -119,7 +119,7 @@ async def admin_stats(call: CallbackQuery):
         f"🟢 <i>Database Pool: Healthy (5-30 connections active)</i>"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Back", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="🔙 Back", callback_data="admin_back")]
     ])
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
@@ -142,7 +142,7 @@ async def admin_broadcast_prompt(call: CallbackQuery, state: FSMContext):
         f"👉 <i>Message forward ya type karke bhejein:</i>"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Cancel", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="❌ Cancel", callback_data="admin_back")]
     ])
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
@@ -200,7 +200,7 @@ async def admin_users_menu(call: CallbackQuery, state: FSMContext):
     )
     await state.set_state(AdminStates.waiting_user_search)
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Back to Admin", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="🔙 Back to Admin", callback_data="admin_back")]
     ])
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
@@ -253,20 +253,18 @@ async def _show_user_management(message_or_call, user: dict):
         f"👉 <i>Select administrative action:</i>"
     )
 
-    ban_btn_text = "Unban User" if is_banned else "Ban User"
+    ban_btn_text = "✅ Unban User" if is_banned else "🚫 Ban User"
     ban_cb = f"admin_unban_{uid}" if is_banned else f"admin_ban_{uid}"
-    ban_icon = ID_VERIFIED if is_banned else ID_WARNING
 
-    prem_btn_text = "Demote to Free" if is_premium else "Grant VIP Premium"
+    prem_btn_text = "⚪ Demote to Free" if is_premium else "💎 Grant VIP Premium"
     prem_cb = f"admin_unpremium_{uid}" if is_premium else f"admin_premium_{uid}"
-    prem_icon = ID_DIAMOND
 
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text=ban_btn_text, callback_data=ban_cb, icon_custom_emoji_id=ban_icon),
-            InlineKeyboardButton(text=prem_btn_text, callback_data=prem_cb, icon_custom_emoji_id=prem_icon),
+            InlineKeyboardButton(text=ban_btn_text, callback_data=ban_cb),
+            InlineKeyboardButton(text=prem_btn_text, callback_data=prem_cb),
         ],
-        [InlineKeyboardButton(text="Back to Admin", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="🔙 Back to Admin", callback_data="admin_back")]
     ])
 
     if hasattr(message_or_call, 'answer'):
@@ -385,7 +383,7 @@ async def admin_add_fsub_step1(call: CallbackQuery, state: FSMContext):
         f"⚠️ <i>Important: Bot ka us channel me Admin hona zaroori hai!</i>"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Cancel", callback_data="admin_fsub", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="❌ Cancel", callback_data="admin_fsub")]
     ])
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
@@ -469,15 +467,14 @@ async def admin_global_settings(call: CallbackQuery):
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text="Toggle Maintenance",
-                callback_data="admin_toggle_maintenance",
-                icon_custom_emoji_id=ID_WARNING
+                text="⚠️ Toggle Maintenance",
+                callback_data="admin_toggle_maintenance"
             )
         ],
         [
-            InlineKeyboardButton(text="Set Max Accounts/User", callback_data="admin_set_max_accounts", icon_custom_emoji_id=ID_USER)
+            InlineKeyboardButton(text="👥 Set Max Accounts/User", callback_data="admin_set_max_accounts")
         ],
-        [InlineKeyboardButton(text="Back to Admin", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="🔙 Back to Admin", callback_data="admin_back")]
     ])
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
@@ -498,7 +495,7 @@ async def admin_set_max_accounts_prompt(call: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.waiting_global_setting)
     await state.update_data(setting_key="max_accounts_per_user")
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Cancel", callback_data="admin_settings", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="❌ Cancel", callback_data="admin_settings")]
     ])
     await call.message.edit_text(
         f"╔══════════════════════════╗\n"
@@ -565,15 +562,15 @@ async def admin_log_account_view(call: CallbackQuery):
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="📱 Login with Phone (OTP)", callback_data="admin_login_phone_log", icon_custom_emoji_id=ID_STAR),
-            InlineKeyboardButton(text="🔑 Login with Session", callback_data="admin_login_session_log", icon_custom_emoji_id=ID_FLASH)
+            InlineKeyboardButton(text="📱 Login with Phone (OTP)", callback_data="admin_login_phone_log"),
+            InlineKeyboardButton(text="🔑 Login with Session", callback_data="admin_login_session_log")
         ],
         [
-            InlineKeyboardButton(text="✏️ Quick Username Set", callback_data="admin_set_log_acc", icon_custom_emoji_id=ID_MSG),
-            InlineKeyboardButton(text="🗑️ Logout / Remove", callback_data="admin_clear_log_acc", icon_custom_emoji_id=ID_TRASH)
+            InlineKeyboardButton(text="✏️ Quick Username Set", callback_data="admin_set_log_acc"),
+            InlineKeyboardButton(text="🗑️ Logout / Remove", callback_data="admin_clear_log_acc")
         ],
         [
-            InlineKeyboardButton(text="Back to Admin", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)
+            InlineKeyboardButton(text="🔙 Back to Admin", callback_data="admin_back")
         ]
     ])
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
@@ -593,7 +590,7 @@ async def admin_set_log_account_prompt(call: CallbackQuery, state: FSMContext):
     await call.answer()
     await state.set_state(AdminStates.waiting_log_account)
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Cancel", callback_data="admin_log_account", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="❌ Cancel", callback_data="admin_log_account")]
     ])
     await call.message.edit_text(
         f"╔══════════════════════════╗\n"
@@ -659,15 +656,15 @@ async def admin_manager_account_view(call: CallbackQuery):
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="📱 Login with Phone (OTP)", callback_data="admin_login_phone_manager", icon_custom_emoji_id=ID_STAR),
-            InlineKeyboardButton(text="🔑 Login with Session", callback_data="admin_login_session_manager", icon_custom_emoji_id=ID_FLASH)
+            InlineKeyboardButton(text="📱 Login with Phone (OTP)", callback_data="admin_login_phone_manager"),
+            InlineKeyboardButton(text="🔑 Login with Session", callback_data="admin_login_session_manager")
         ],
         [
-            InlineKeyboardButton(text="✏️ Quick Username Set", callback_data="admin_set_mgr_acc", icon_custom_emoji_id=ID_USER),
-            InlineKeyboardButton(text="🗑️ Logout / Remove", callback_data="admin_clear_mgr_acc", icon_custom_emoji_id=ID_TRASH)
+            InlineKeyboardButton(text="✏️ Quick Username Set", callback_data="admin_set_mgr_acc"),
+            InlineKeyboardButton(text="🗑️ Logout / Remove", callback_data="admin_clear_mgr_acc")
         ],
         [
-            InlineKeyboardButton(text="Back to Admin", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)
+            InlineKeyboardButton(text="🔙 Back to Admin", callback_data="admin_back")
         ]
     ])
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
@@ -687,7 +684,7 @@ async def admin_set_manager_account_prompt(call: CallbackQuery, state: FSMContex
     await call.answer()
     await state.set_state(AdminStates.waiting_manager_account)
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Cancel", callback_data="admin_manager_account", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="❌ Cancel", callback_data="admin_manager_account")]
     ])
     await call.message.edit_text(
         f"╔══════════════════════════╗\n"
@@ -733,7 +730,7 @@ async def admin_start_system_phone_login(call: CallbackQuery, state: FSMContext)
 
     back_cb = "admin_log_account" if role == "log" else "admin_manager_account"
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Cancel", callback_data=back_cb, icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="❌ Cancel", callback_data=back_cb)]
     ])
 
     await call.message.edit_text(
@@ -924,7 +921,7 @@ async def admin_start_system_session_login(call: CallbackQuery, state: FSMContex
 
     back_cb = "admin_log_account" if role == "log" else "admin_manager_account"
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Cancel", callback_data=back_cb, icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="❌ Cancel", callback_data=back_cb)]
     ])
 
     await call.message.edit_text(
@@ -1021,7 +1018,7 @@ async def admin_mass_join_prompt(call: CallbackQuery, state: FSMContext):
         f"👉 <i>Channel/Group link aur optional count yahan send karein:</i>"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Cancel", callback_data="admin_back", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="❌ Cancel", callback_data="admin_back")]
     ])
     await state.set_state(AdminStates.waiting_mass_join_link)
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
@@ -1088,7 +1085,7 @@ async def process_admin_mass_join(message: Message, bot: Bot, state: FSMContext)
     limit_note = f"<code>{total_to_process}</code> (Limit out of {total_available} available)" if limit else f"<code>{total_to_process}</code> (All Available)"
 
     cancel_markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Stop / Cancel Mass Join", callback_data="cancel_mass_join", icon_custom_emoji_id=ID_PAUSED)]
+        [InlineKeyboardButton(text="🛑 Stop / Cancel Mass Join", callback_data="cancel_mass_join")]
     ])
 
     status_msg = await message.answer(
@@ -1128,7 +1125,7 @@ async def run_mass_join_worker(bot: Bot, admin_chat_id: int, status_message_id: 
     was_cancelled = False
 
     cancel_markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Stop / Cancel Mass Join", callback_data="cancel_mass_join", icon_custom_emoji_id=ID_PAUSED)]
+        [InlineKeyboardButton(text="🛑 Stop / Cancel Mass Join", callback_data="cancel_mass_join")]
     ])
 
     for idx, acc in enumerate(accounts, start=1):

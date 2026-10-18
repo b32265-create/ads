@@ -69,8 +69,8 @@ async def btn_add_account(call: CallbackQuery):
             f"Unlimited accounts host karne ke liye aur faster 2s message delay ke liye Premium join karein!"
         )
         prem_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Upgrade to Premium", callback_data="premium", icon_custom_emoji_id=ID_DIAMOND)],
-            [InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)]
+            [InlineKeyboardButton(text="💎 Upgrade to Premium", callback_data="premium")],
+            [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
         ])
         await call.message.edit_text(limit_text, parse_mode="HTML", reply_markup=prem_kb)
         return
@@ -410,8 +410,8 @@ async def btn_my_accounts(call: CallbackQuery):
             f"Niche <b>Add Account</b> par click karke apna pehla account connect karein."
         )
         markup = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Add Account", callback_data="add_account", icon_custom_emoji_id=ID_HEART_FIRE)],
-            [InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)]
+            [InlineKeyboardButton(text="➕ Add Account", callback_data="add_account")],
+            [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
         ])
         await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
         return
@@ -430,12 +430,12 @@ async def btn_my_accounts(call: CallbackQuery):
             f"   └ 🚀 Dispatched: <code>{acc.get('total_sent', 0)}</code> ads\n\n"
         )
         keyboard.append([
-            InlineKeyboardButton(text=f"Remove {acc.get('phone_number')}", callback_data=f"del_acc_{acc['id']}", icon_custom_emoji_id=ID_TRASH)
+            InlineKeyboardButton(text=f"🗑️ Remove {acc.get('phone_number')}", callback_data=f"del_acc_{acc['id']}")
         ])
         
     text += f"━━━━━━━━━━━━━━━━━━━━━\n💡 <i>Kisi account ko unlink karne ke liye niche buttons use karein:</i>"
-    keyboard.append([InlineKeyboardButton(text="Add Another Account", callback_data="add_account", icon_custom_emoji_id=ID_HEART_FIRE)])
-    keyboard.append([InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)])
+    keyboard.append([InlineKeyboardButton(text="➕ Add Another Account", callback_data="add_account")])
+    keyboard.append([InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")])
     
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
 
@@ -451,8 +451,8 @@ async def btn_delete_accounts_menu(call: CallbackQuery):
         return
         
     keyboard = [
-        [InlineKeyboardButton(text="Delete ALL My Accounts", callback_data="confirm_delete_all_accs", icon_custom_emoji_id=ID_WARNING)],
-        [InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="⚠️ Delete ALL My Accounts", callback_data="confirm_delete_all_accs")],
+        [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
     ]
     await call.message.edit_text(
         f"╔══════════════════════════╗\n"

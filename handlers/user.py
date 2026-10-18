@@ -195,13 +195,13 @@ def build_accounts_verification_ui(log_acc: str, has_log: bool, mgr_acc: str, ha
         st_icon = f"{EMOJI_VERIFIED} <b>Verified</b>" if has_log else f"{EMOJI_CROSS} <b>Pending (Message 'Hi')</b>"
         status_items.append(f"📡 <b>Live Logs Account:</b> <a href='https://t.me/{log_acc}'>@{log_acc}</a>\n   └ Status: {st_icon}")
         if not has_log:
-            keyboard.append([InlineKeyboardButton(text=f"📡 Message @{log_acc} (Send 'Hi')", url=f"https://t.me/{log_acc}", icon_custom_emoji_id=ID_STAR)])
+            keyboard.append([InlineKeyboardButton(text=f"📡 Message @{log_acc} (Send 'Hi')", url=f"https://t.me/{log_acc}")])
 
     if mgr_acc:
         st_icon = f"{EMOJI_VERIFIED} <b>Verified</b>" if has_mgr else f"{EMOJI_CROSS} <b>Pending (Message 'Hi')</b>"
         status_items.append(f"👔 <b>Lead Manager Account:</b> <a href='https://t.me/{mgr_acc}'>@{mgr_acc}</a>\n   └ Status: {st_icon}")
         if not has_mgr:
-            keyboard.append([InlineKeyboardButton(text=f"👔 Message @{mgr_acc} (Send 'Hi')", url=f"https://t.me/{mgr_acc}", icon_custom_emoji_id=ID_USER)])
+            keyboard.append([InlineKeyboardButton(text=f"👔 Message @{mgr_acc} (Send 'Hi')", url=f"https://t.me/{mgr_acc}")])
 
     accounts_block = "\n\n".join(status_items)
 
@@ -219,7 +219,7 @@ def build_accounts_verification_ui(log_acc: str, has_log: bool, mgr_acc: str, ha
     )
 
     keyboard.append([
-        InlineKeyboardButton(text="✅ Check Verification / Unlock", callback_data="check_accounts_messaged", icon_custom_emoji_id=ID_VERIFIED)
+        InlineKeyboardButton(text="✅ Check Verification / Unlock", callback_data="check_accounts_messaged")
     ])
 
     return text, InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -995,10 +995,10 @@ async def btn_premium(call: CallbackQuery):
         f"👉 <a href='https://t.me/Tanweer07'>@Tanweer07</a>"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Owner @Tanweer07", url="https://t.me/Tanweer07")],
-        [InlineKeyboardButton(text="Support @TANWEER_SUPPORT", url="https://t.me/TANWEER_SUPPORT")],
-        [InlineKeyboardButton(text="Refer Friends (Free VIP)", callback_data="refer_earn", icon_custom_emoji_id=ID_GIFT)],
-        [InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="👑 Owner @Tanweer07", url="https://t.me/Tanweer07")],
+        [InlineKeyboardButton(text="💬 Support @TANWEER_SUPPORT", url="https://t.me/TANWEER_SUPPORT")],
+        [InlineKeyboardButton(text="🎁 Refer Friends (Free VIP)", callback_data="refer_earn")],
+        [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
     ])
     if call.message.photo:
         await call.message.delete()
@@ -1039,8 +1039,8 @@ async def btn_refer_earn(call: CallbackQuery, bot: Bot):
 
     share_text = "Turn your Alt account into an automated Telegram AdsBot with free trial and bulk power!"
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Share Link with Friends", url=f"https://t.me/share/url?url={ref_link}&text={share_text}")],
-        [InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="🔗 Share Link with Friends", url=f"https://t.me/share/url?url={ref_link}&text={share_text}")],
+        [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
     ])
 
     if call.message.photo:
@@ -1073,9 +1073,9 @@ async def btn_set_forward_account(call: CallbackQuery):
         f"Niche button se naya account username set ya clear karein:"
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Set / Change Main Account", callback_data="user_set_fwd_acc", icon_custom_emoji_id=ID_USER)],
-        [InlineKeyboardButton(text="Remove / Clear Main Account", callback_data="user_clear_fwd_acc", icon_custom_emoji_id=ID_TRASH)],
-        [InlineKeyboardButton(text="Back to Dashboard", callback_data="back_to_dashboard", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="📲 Set / Change Main Account", callback_data="user_set_fwd_acc")],
+        [InlineKeyboardButton(text="🗑️ Remove / Clear Main Account", callback_data="user_clear_fwd_acc")],
+        [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
     ])
 
     if call.message.photo:
@@ -1095,7 +1095,7 @@ async def user_set_forward_account_prompt(call: CallbackQuery, state: FSMContext
     await call.answer()
     await state.set_state(UserStates.waiting_forward_account)
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Cancel", callback_data="set_forward_account", icon_custom_emoji_id=ID_BACK)]
+        [InlineKeyboardButton(text="🔙 Cancel", callback_data="set_forward_account")]
     ])
     text = (
         f"╔══════════════════════════╗\n"
