@@ -1,4 +1,5 @@
 import logging
+import re
 from telethon import TelegramClient
 from telethon.tl.functions.account import UpdateProfileRequest
 from telethon.tl.functions.users import GetFullUserRequest
@@ -22,14 +23,34 @@ async def get_cached_bot_username(bot: Bot = None) -> str:
         _CACHED_BOT_USERNAME = "Atomic_Ads_Robot"
     return _CACHED_BOT_USERNAME
 
+def clean_branding_from_text(text: str, bot_username: str) -> str:
+    """Removes any bot username or ad suffix from a string."""
+    if not text:
+        return ""
+    clean_u = bot_username.replace("@", "")
+    patterns = [
+        rf"\s*\|\s*@{re.escape(clean_u)}",
+        rf"\s*\|\s*{re.escape(clean_u)}",
+        rf"Ad Powered by\s*@{re.escape(clean_u)}",
+        rf"Powered by\s*@{re.escape(clean_u)}",
+        rf"@{re.escape(clean_u)}",
+    ]
+    res = text
+    for p in patterns:
+        res = re.sub(p, "", res, flags=re.IGNORECASE)
+    res = re.sub(r"\s*\|\s*$", "", res)
+    res = re.sub(r"^\s*\|\s*", "", res)
+    return res.strip()
+
 async def sync_account_branding(client: TelegramClient, user_id: int, bot: Bot = None, bot_username: str = None):
     """
     Enforces branding policy on hosted Telegram accounts:
-    - If user is NOT premium (Free User):
-      - Appends '@BotUsername' to account's Telegram first_name.
-      - Adds '@BotUsername' into account's Telegram bio/about.
-    - If user IS premium (VIP User):
-      - Removes '@BotUsername' from first_name and bio/about.
+    - Free Users:
+      - Name: CLEAN (never appends bot username to first_name; cleans it if previously added).
+      - Bio: Appends '@BotUsername' to account bio/about.
+    - Premium Users (VIP):
+      - Name: CLEAN (no bot username).
+      - Bio: CLEAN (removes bot username from bio/about).
     """
     if not client or not await client.is_user_authorized():
         return
@@ -46,7 +67,6 @@ async def sync_account_branding(client: TelegramClient, user_id: int, bot: Bot =
 
         me = await client.get_me()
         current_first = me.first_name or ""
-        current_last = me.last_name or ""
 
         # Fetch bio / about
         current_bio = ""
@@ -56,17 +76,19 @@ async def sync_account_branding(client: TelegramClient, user_id: int, bot: Bot =
         except Exception as e:
             logger.debug(f"Could not fetch full user bio: {e}")
 
-        suffix = f" | {bot_username}"
+        kwargs = {}
 
+        # 1. First Name Policy: Neither Free nor VIP accounts should have bot username in their name!
+        # If bot_username is currently inside current_first, clean it out.
+        clean_first = clean_branding_from_text(current_first, bot_username)
+        if not clean_first:
+            clean_first = current_first if bot_username.lower() not in current_first.lower() else "Telegram User"
+        if clean_first != current_first:
+            kwargs["first_name"] = clean_first
+
+        # 2. Bio / About Policy:
         if not is_premium:
-            # FREE USER: Add branding
-            new_first = None
-            if bot_username.lower() not in current_first.lower() and bot_username.lower() not in current_last.lower():
-                max_name_len = max(10, 64 - len(suffix))
-                trimmed_orig = current_first[:max_name_len].rstrip()
-                new_first = f"{trimmed_orig}{suffix}"
-
-            new_bio = None
+            # FREE USER: Only bio gets bot username
             if bot_username.lower() not in current_bio.lower():
                 if current_bio:
                     bio_suffix = f" | {bot_username}"
@@ -76,43 +98,18 @@ async def sync_account_branding(client: TelegramClient, user_id: int, bot: Bot =
                 else:
                     new_bio = f"Ad Powered by {bot_username}"
 
-            kwargs = {}
-            if new_first is not None and new_first != current_first:
-                kwargs["first_name"] = new_first
-            if new_bio is not None and new_bio != current_bio:
-                kwargs["about"] = new_bio
-
-            if kwargs:
-                await client(UpdateProfileRequest(**kwargs))
-                logger.info(f"Applied free-tier branding to account {me.id} (user {user_id}): {kwargs}")
-
+                if new_bio != current_bio:
+                    kwargs["about"] = new_bio
         else:
-            # PREMIUM USER: Remove branding
-            new_first = None
-            if bot_username.lower() in current_first.lower():
-                cleaned = current_first
-                for pattern in [f" | {bot_username}", f"| {bot_username}", f"|{bot_username}", bot_username]:
-                    cleaned = cleaned.replace(pattern, "").strip()
-                if not cleaned:
-                    cleaned = "Telegram User"
-                new_first = cleaned
+            # PREMIUM USER: Bio should NOT have bot username
+            clean_bio = clean_branding_from_text(current_bio, bot_username)
+            if clean_bio != current_bio:
+                kwargs["about"] = clean_bio
 
-            new_bio = None
-            if bot_username.lower() in current_bio.lower():
-                cleaned_bio = current_bio
-                for pattern in [f"Ad Powered by {bot_username}", f" | {bot_username}", f"| {bot_username}", f"|{bot_username}", bot_username]:
-                    cleaned_bio = cleaned_bio.replace(pattern, "").strip()
-                new_bio = cleaned_bio
-
-            kwargs = {}
-            if new_first is not None and new_first != current_first:
-                kwargs["first_name"] = new_first
-            if new_bio is not None and new_bio != current_bio:
-                kwargs["about"] = new_bio
-
-            if kwargs:
-                await client(UpdateProfileRequest(**kwargs))
-                logger.info(f"Cleaned VIP branding from account {me.id} (user {user_id}): {kwargs}")
+        if kwargs:
+            await client(UpdateProfileRequest(**kwargs))
+            tier = "VIP" if is_premium else "Free"
+            logger.info(f"Updated {tier} branding on account {me.id} (user {user_id}): {kwargs}")
 
     except Exception as e:
         logger.warning(f"Profile branding sync skipped/failed for user {user_id}: {e}")
