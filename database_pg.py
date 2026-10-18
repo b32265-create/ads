@@ -9,7 +9,7 @@ All operations are async and production-ready.
 import asyncpg
 import logging
 import json
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from config import DATABASE_URL
 
 logger = logging.getLogger(__name__)
