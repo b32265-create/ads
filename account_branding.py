@@ -19,7 +19,7 @@ async def get_cached_bot_username(bot: Bot = None) -> str:
         except Exception:
             pass
     if not _CACHED_BOT_USERNAME:
-        _CACHED_BOT_USERNAME = "Tg_demo_Robot"
+        _CACHED_BOT_USERNAME = "Atomic_Ads_Robot"
     return _CACHED_BOT_USERNAME
 
 async def sync_account_branding(client: TelegramClient, user_id: int, bot: Bot = None, bot_username: str = None):

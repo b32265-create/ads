@@ -159,7 +159,7 @@ async def get_bot_username(bot: Bot) -> str:
     global _CACHED_BOT_USERNAME
     if not _CACHED_BOT_USERNAME:
         bot_info = await bot.get_me()
-        _CACHED_BOT_USERNAME = bot_info.username or "Tg_demo_Robot"
+        _CACHED_BOT_USERNAME = bot_info.username or "Atomic_Ads_Robot"
     return _CACHED_BOT_USERNAME
 
 async def check_user_system_accounts_status(user_id: int):
