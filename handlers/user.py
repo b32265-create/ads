@@ -1005,8 +1005,8 @@ Automate your Telegram marketing at maximum scale with VIP power:
 👉 <a href='https://t.me/Tanweer07'>@Tanweer07</a>"""
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="👑 Owner @Tanweer07", url="https://t.me/Tanweer07")],
-        [InlineKeyboardButton(text="💬 Support @TANWEER_SUPPORT", url="https://t.me/TANWEER_SUPPORT")],
+        [InlineKeyboardButton(text="👑 Owner", url="https://t.me/Tanweer07")],
+        [InlineKeyboardButton(text="💬 Support", url="https://t.me/TANWEER_SUPPORT")],
         [InlineKeyboardButton(text="🎁 Refer Friends (Free VIP)", callback_data="refer_earn")],
         [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
     ])
