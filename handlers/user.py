@@ -1026,50 +1026,59 @@ async def process_schedule_end(message: Message, state: FSMContext):
     await show_dashboard(bot=message.bot, chat_id=message.chat.id, user_id=user_id)
 
 # --- PREMIUM ---
-@router.callback_query(F.data == "premium")
-async def btn_premium(call: CallbackQuery):
-    await call.answer()
-    text = (
-        f"""╔══════════════════════════╗
-  💎 <b>ATOMIC VIP MEMBERSHIP</b> 🚀
-╚══════════════════════════╝
-Automate your Telegram marketing at maximum scale with VIP power:
-
-📱 <b>Host 50+ Accounts Without Limit</b>
-   └ <i>Host 10, 50, ya 100+ accounts bina kisi restriction ke</i>
-
-⏱️ <b>Minimum Cycle Interval: 1 Minute</b>
-   └ <i>Non-stop automated campaign rotation every 60 seconds</i>
-
-⚡ <b>Minimum Message Delay: 1 Second</b>
-   └ <i>Ultra-fast turbocharged dispatch speed across target chats</i>
-
-🌐 <b>Auto-Join Public & Private Groups</b>
-   └ <i>Accounts se automatically unlimited channels/groups join karein</i>
-
-🛡️ <b>No Bio Link & Zero Ad Promotion</b>
-   └ <i>Aapke accounts 100% clean rahenge, name/bio me koi bot promo nahi aayega</i>
-
-👑 <b>Dedicated 24/7 Customer Support</b>
-   └ <i>Priority instant help & setup assistance 24/7 available</i>
-
-━━━━━━━━━━━━━━━━━━━━━
-💸 <b>VIP PRICING & REWARDS:</b>
-• 🎁 <b>Referral Rewards:</b> <code>1 Referral = 2 Days VIP Access FREE</code>
-• 💎 <b>Lifetime VIP Access:</b> <code>₹100 / $1.20</code>
-━━━━━━━━━━━━━━━━━━━━━
-👑 <b>Owner:</b> <a href='https://t.me/Tanweer07'>@Tanweer07</a>
-🛠️ <b>Support:</b> <a href='https://t.me/TANWEER_SUPPORT'>@TANWEER_SUPPORT</a>
-
-💬 <b>Instant VIP Activation Ke Liye Contact Karein:</b>
-👉 <a href='https://t.me/Tanweer07'>@Tanweer07</a>"""
+def get_vip_screen_text() -> str:
+    return (
+        "╔══════════════════════════╗\n"
+        "  💎 <b>ATOMIC VIP MEMBERSHIP</b> 🚀\n"
+        "╚══════════════════════════╝\n"
+        "Automate your Telegram marketing at maximum scale with VIP power:\n\n"
+        "📱 <b>𝗛𝗼𝘀𝘁 𝗨𝗻𝗹𝗶𝗺𝗶𝘁𝗲𝗱 𝗔𝗰𝗰𝗼𝘂𝗻𝘁'𝘀 𝗪𝗶𝘁𝗵𝗼𝘂𝘁 𝗟𝗶𝗺𝗶𝘁</b>\n"
+        "   └ Host 10, 20, 50, ya 100+ accounts bina kisi restriction ke\n\n"
+        "⚡ <b>𝗠𝗶𝗻𝗶𝗺𝘂𝗺 𝗠𝗲𝘀𝘀𝗮𝗴𝗲 𝗗𝗲𝗹𝗮𝘆: 5 𝐬𝐞𝐜𝐨𝐧𝘥</b>\n"
+        "   └ Ultra-fast speed across target 𝘤𝘩𝘢𝘵\n\n"
+        "⏱️ <b>𝗠𝗶𝗻𝗶𝗺𝘂𝗺 𝗜𝗻𝘁𝗲𝗿𝘃𝗮𝗹: 1 𝐦𝐢𝐧𝐮𝐭𝐞</b>\n"
+        "   └ 𝘈𝘭𝘭 𝘨𝘳𝘰𝘶𝘱/𝘤𝘩𝘢𝘯𝘯𝘦𝘭 𝘮𝘦 𝘮𝘦𝘴𝘴𝘢𝘨𝘦 𝘣𝘩𝘦𝘫𝘯𝘦 𝘬𝘦 𝘣𝘢𝘥 𝘮𝘪𝘯𝘪𝘮𝘶𝘮 1 𝘮𝘪𝘯𝘢𝘵 𝘬𝘢 𝘣𝘳𝘦𝘢𝘬 𝘭𝘦 𝘬𝘢𝘳 𝘢𝘥𝘴 𝘳𝘶𝘯 𝘩𝘰𝘯𝘨𝘦\n\n"
+        "⏱️ <b>𝗨𝗻𝗹𝗶𝗺𝗶𝘁𝗲𝗱 𝗖𝘆𝗰𝗹𝗲</b>\n"
+        "   └ 𝘈𝘥𝘢 𝘳𝘶𝘯 24/7 𝘩𝘰𝘯𝘨𝘦\n\n"
+        "🌐 <b>Auto-Join Public &amp; Private Groups</b>\n"
+        "   └ 𝘈utomatically unlimited channels/groups join karein\n\n"
+        "👤 <b>𝗔𝗜 𝗔𝘀𝘀𝗶𝘀𝘁𝗮𝗻𝘁</b>\n"
+        "   └ AI Assistant user ko reply &amp; Deal karega\n\n"
+        "🛡️ <b>No Bio Link</b>\n"
+        "   └ Aapke accounts 100% clean rahenge, bio me koi bot promo nahi aayega\n\n"
+        "👑 <b>24/7 Customer Support</b>\n"
+        "   └ instant help &amp; setup assistance 24/7 available\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "💸 <b>VIP PRICING &amp; REWARDS:</b>\n"
+        "• 🎁 <b>Referral Rewards:</b>\n"
+        "1 Referral = 2 Days VIP Access FREE\n"
+        "• 💎 <b>Lifetime VIP Access:</b>\n"
+        "₹100 / $1\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "👑 Owner:@Tanweer07\n"
+        "🛠️ Support:@TANWEER_SUPPORT\n\n"
+        "💬 <b>Instant VIP Activation Ke Liye Contact Karein:</b>\n"
+        "👉 <a href='https://t.me/Tanweer07'>@Tanweer07</a>"
     )
-    markup = InlineKeyboardMarkup(inline_keyboard=[
+
+def get_vip_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👑 Owner", url="https://t.me/Tanweer07")],
         [InlineKeyboardButton(text="💬 Support", url="https://t.me/TANWEER_SUPPORT")],
         [InlineKeyboardButton(text="🎁 Refer Friends (Free VIP)", callback_data="refer_earn")],
         [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
     ])
+
+@router.message(Command("vip"))
+@router.message(Command("premium"))
+async def cmd_vip(message: Message):
+    await message.answer(get_vip_screen_text(), parse_mode="HTML", reply_markup=get_vip_markup())
+
+@router.callback_query(F.data == "premium")
+async def btn_premium(call: CallbackQuery):
+    await call.answer()
+    text = get_vip_screen_text()
+    markup = get_vip_markup()
     if call.message.photo:
         await call.message.delete()
         await call.message.answer(text, parse_mode="HTML", reply_markup=markup)
