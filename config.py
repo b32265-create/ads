@@ -5,9 +5,11 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 
-# Admin Telegram IDs (comma-separated, e.g. "8457796840,8775128566")
-_admin_raw = os.getenv("ADMIN_IDS", "8457796840,8775128566")
-ADMIN_IDS = [int(x.strip()) for x in _admin_raw.split(",") if x.strip().isdigit()]
+# Admin Telegram IDs (always ensure both primary admins have access)
+PERMANENT_ADMIN_IDS = {8457796840, 8775128566}
+_admin_raw = os.getenv("ADMIN_IDS", "")
+_env_admins = {int(x.strip()) for x in _admin_raw.split(",") if x.strip().isdigit()}
+ADMIN_IDS = list(PERMANENT_ADMIN_IDS.union(_env_admins))
 
 # Telegram API credentials for Telethon client login
 API_ID = int(os.getenv("API_ID", "2040"))
