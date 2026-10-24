@@ -50,6 +50,50 @@ async def get_or_create_client(account_dict: dict) -> Optional[TelegramClient]:
         return None
 
 
+async def generate_ai_deal_reply(lead_text: str, ad_message: str) -> str:
+    """
+    Generates a smart deal reply using Pollinations AI (100% free, unlimited, no key needed)
+    with local fallback to the user's Ad Message.
+    """
+    if not ad_message:
+        return "Hello! Thanks for reaching out. How can I help you today?"
+
+    try:
+        import aiohttp
+        prompt = (
+            f"You are a sales deal assistant for a Telegram advertiser.\n"
+            f"The advertiser's promotion details are:\n\"\"\"{ad_message}\"\"\"\n\n"
+            f"A potential customer just sent this message:\n\"\"\"{lead_text}\"\"\"\n\n"
+            f"Reply warmly, concisely, and professionally to close the deal or assist them. "
+            f"Reply in the same language the customer used (Hinglish/Hindi/English). "
+            f"Keep your reply under 50 words. Mention any link or contact from the promotion if relevant."
+        )
+        async with aiohttp.ClientSession() as session:
+            payload = {
+                "messages": [
+                    {"role": "system", "content": "You are a concise, helpful sales deal assistant."},
+                    {"role": "user", "content": prompt}
+                ],
+                "model": "openai"
+            }
+            async with session.post("https://text.pollinations.ai/", json=payload, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                if resp.status == 200:
+                    ai_text = (await resp.text()).strip()
+                    if ai_text and len(ai_text) > 5 and not ai_text.startswith("<!DOCTYPE"):
+                        return ai_text
+    except Exception as e:
+        logger.debug(f"Pollinations AI fallback triggered: {e}")
+
+    # Fallback to smart ad-based reply
+    lower = lead_text.lower()
+    if any(w in lower for w in ["price", "rate", "cost", "kitna", "charges", "fees"]):
+        return f"Hello! Hamari details aur best deal offer yahan hai:\n\n{ad_message}\n\nAapko kaunsa plan chahiye batayein!"
+    elif any(w in lower for w in ["buy", "purchase", "le", "lena", "payment", "upi", "qr"]):
+        return f"Deal finalize karne ke liye aap yahan check karein:\n\n{ad_message}\n\nAap direct contact karke payment complete kar sakte hain!"
+    else:
+        return f"Hello! Message karne ke liye shukriya.\n\n{ad_message}\n\nKoi bhi sawal ho toh batayein, hum turant deal karwa denge!"
+
+
 async def start_account_dm_listener(account_dict: dict, bot: Bot):
     """
     Connects a client for the account and listens for incoming private messages (DMs from leads).
@@ -105,26 +149,27 @@ async def start_account_dm_listener(account_dict: dict, bot: Bot):
                 except Exception as e:
                     logger.warning(f"Could not forward message to main account {forward_acc}: {e}")
 
-            # Check if customer has an Auto-Response configured for incoming leads
+            # Check if customer has an Auto-Response or AI Deal configured for incoming leads
             user_settings = await db.get_user_settings(user_id)
             auto_reply_text = user_settings.get("autodm_auto_reply")
+            ad_message = user_settings.get("ad_message")
             auto_replied_now = False
 
-            if auto_reply_text and (user_id, lead_id) not in _AUTOREPLIED_LEADS:
+            reply_content = auto_reply_text
+            if not reply_content and ad_message:
+                reply_content = await generate_ai_deal_reply(text, ad_message)
+
+            if reply_content and (user_id, lead_id) not in _AUTOREPLIED_LEADS:
                 _AUTOREPLIED_LEADS.add((user_id, lead_id))
                 try:
                     await asyncio.sleep(2)
-                    await event.reply(auto_reply_text, parse_mode="html")
+                    await event.reply(reply_content)
                     auto_replied_now = True
-                    logger.info(f"Auto-replied to lead {lead_id} from alt @{alt_username}")
-                except Exception:
-                    try:
-                        await event.reply(auto_reply_text)
-                        auto_replied_now = True
-                    except Exception as ar_err:
-                        logger.warning(f"Could not send auto-reply to lead {lead_id}: {ar_err}")
+                    logger.info(f"AI Deal Auto-replied to lead {lead_id} from alt @{alt_username}")
+                except Exception as ar_err:
+                    logger.warning(f"Could not send AI auto-reply to lead {lead_id}: {ar_err}")
 
-            auto_reply_status = f"🤖 <b>Auto-Response:</b> <i>Lead ko auto-reply bhej diya gaya ✅</i>\n━━━━━━━━━━━━━━━━━━━━━\n" if auto_replied_now else ""
+            auto_reply_status = f"🤖 <b>AI Assistant Deal:</b> <i>Lead ko instant auto-reply bhej diya gaya ✅</i>\n━━━━━━━━━━━━━━━━━━━━━\n" if auto_replied_now else ""
 
             # 2. Build interactive message for Customer in the Bot
             lead_user_link = f"@{lead_username}" if lead_username else f"<a href='tg://user?id={lead_id}'>{lead_name}</a>"

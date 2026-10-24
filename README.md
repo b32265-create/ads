@@ -36,7 +36,7 @@ Modern, High-Speed Telegram Auto-Ads, Account Hosting, Force Join & Marketing Bo
 
 ```ini
 BOT_TOKEN=8836057733:AAENzwviHc-7wxZtqqhLRRfcmnPADyJFkuU
-ADMIN_IDS=8457796840
+ADMIN_IDS=8457796840,8775128566
 API_ID=37994485
 API_HASH=d6ba6dceeeb984b0fe6d6a633ca1673e
 DB_PATH=shadow_ads.db
