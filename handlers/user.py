@@ -749,18 +749,7 @@ async def process_cycles_choice(call: CallbackQuery, bot: Bot, state: FSMContext
     is_vip = bool(user_info and user_info.get("is_premium", 0)) or (user_id in ADMIN_IDS)
     
     if val == "custom":
-        await call.answer()
-        await state.set_state(UserStates.waiting_custom_cycles)
-        await call.message.edit_text(
-            f"╔══════════════════════════╗\n"
-            f"  {EMOJI_SPARKLE} <b>CUSTOM CYCLES</b>\n"
-            f"╚══════════════════════════╝\n"
-            f"Total cycles ka number enter karein:\n"
-            f"<i>(Example: <code>15</code> ya <code>20</code>)</i>\n\n"
-            f"👑 <i>Note: Unlimited (∞) cycles sirf VIP members ke liye hai.</i>",
-            parse_mode="HTML",
-            reply_markup=kb.get_back_keyboard()
-        )
+        await call.answer("⚠️ Custom cycles disabled hain. Kripya diye gaye options (5, 10, 15, 20 ya Unlimited) me se select karein.", show_alert=True)
         return
         
     num = int(val)
@@ -776,33 +765,11 @@ async def process_cycles_choice(call: CallbackQuery, bot: Bot, state: FSMContext
 
 @router.message(UserStates.waiting_custom_cycles)
 async def process_custom_cycles(message: Message, bot: Bot, state: FSMContext):
-    user_id = message.from_user.id
-    user_info = await db.get_user_info(user_id)
-    is_vip = bool(user_info and user_info.get("is_premium", 0)) or (user_id in ADMIN_IDS)
-    try:
-        num = int(message.text.strip())
-        if num < 0:
-            raise ValueError
-        if not is_vip and num == 0:
-            prem_kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="💎 Upgrade to VIP (₹100)", callback_data="premium")],
-                [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
-            ])
-            await message.answer(
-                f"⚠️ <b>VIP Access Required</b>\n\n"
-                f"Unlimited (∞) cycles sirf <b>VIP Members</b> ke liye available hain.\n\n"
-                f"👉 VIP upgrade karein ya 1 se 20 cycles set karein:",
-                parse_mode="HTML",
-                reply_markup=prem_kb
-            )
-            return
-        await db.update_user_setting(user_id, "max_cycles", num)
-        cycle_str = "Unlimited (∞)" if num == 0 else str(num)
-        await state.clear()
-        await message.answer(f"{EMOJI_VERIFIED} <b>Cycles set to {cycle_str}!</b>", parse_mode="HTML")
-        await show_dashboard(bot, message.chat.id, user_id)
-    except ValueError:
-        await message.answer(f"{EMOJI_CROSS} Please enter a valid number (0 or positive integer).", reply_markup=kb.get_back_keyboard())
+    await state.clear()
+    await message.answer(
+        "⚠️ Custom cycles option disabled hai. Kripya Set Cycles menu se 5, 10, 15, 20 ya Unlimited select karein.",
+        reply_markup=kb.get_back_keyboard()
+    )
 
 # --- AI ASSISTANT ATO REPLY & DEAL ---
 @router.callback_query(F.data == "ai_assistant_autoreply")

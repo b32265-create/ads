@@ -132,9 +132,6 @@ def get_cycles_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🎯 20 Cycles", callback_data="cycles_20"),
         ],
         [
-            InlineKeyboardButton(text="⚙️ Custom Number", callback_data="cycles_custom"),
-        ],
-        [
             InlineKeyboardButton(text="👑 ♾️ Unlimited (∞) (VIP)", callback_data="cycles_0"),
         ],
         [
