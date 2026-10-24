@@ -8,50 +8,60 @@ def get_dashboard_keyboard(
     manager_enabled: int = 1
 ) -> InlineKeyboardMarkup:
     """
-    Build the 2-column interactive Dashboard keyboard with universal standard unicode emojis.
+    Build the modern, perfectly balanced 2-column interactive Dashboard keyboard.
     """
-    sched_text = "⏰ Schedule: ON" if schedule_enabled else "⏰ Schedule: OFF"
-    mgr_text = "👔 Manager: ON" if manager_enabled else "👔 Manager: OFF"
+    sched_icon = "🟢" if schedule_enabled else "🔴"
+    mgr_icon = "🟢" if manager_enabled else "🔴"
 
     keyboard = [
+        # Account Hub
         [
             InlineKeyboardButton(text="➕ Add Account", callback_data="add_account"),
             InlineKeyboardButton(text="📱 My Accounts", callback_data="my_accounts"),
         ],
+        # Creative & Review
         [
             InlineKeyboardButton(text="📝 Set Ad Message", callback_data="set_ad_msg"),
-            InlineKeyboardButton(text="⏱️ Set Interval", callback_data="set_interval"),
-        ],
-        [
-            InlineKeyboardButton(text=f"⏳ Msg Delay: {msg_delay}s", callback_data="set_delay"),
-            InlineKeyboardButton(text=f"🎯 Target: {target}", callback_data="toggle_target"),
-        ],
-        [
-            InlineKeyboardButton(text="🔄 Set Cycles", callback_data="set_cycles"),
-            InlineKeyboardButton(text="🚫 Exclude Groups", callback_data="exclude_groups"),
-        ],
-        [
-            InlineKeyboardButton(text="🚀 Start Ads", callback_data="start_ads"),
-            InlineKeyboardButton(text="🛑 Stop Ads", callback_data="stop_ads"),
-        ],
-        [
             InlineKeyboardButton(text="👁️ Preview Ad", callback_data="preview_ad"),
-            InlineKeyboardButton(text="📊 Analytics", callback_data="analytics"),
         ],
+        # Speed & Cadence
         [
-            InlineKeyboardButton(text="💎 Premium (₹100)", callback_data="premium"),
-            InlineKeyboardButton(text="🎁 Refer & Earn (Free VIP)", callback_data="refer_earn"),
+            InlineKeyboardButton(text="⏱️ Set Interval", callback_data="set_interval"),
+            InlineKeyboardButton(text=f"⚡ Delay: {msg_delay}s", callback_data="set_delay"),
         ],
+        # Targeting & Volume
+        [
+            InlineKeyboardButton(text=f"🎯 Target: {target}", callback_data="toggle_target"),
+            InlineKeyboardButton(text="🔄 Set Cycles", callback_data="set_cycles"),
+        ],
+        # Group Actions
         [
             InlineKeyboardButton(text="⚡ Auto Join Groups", callback_data="auto_join_groups"),
+            InlineKeyboardButton(text="🚫 Exclude Groups", callback_data="exclude_groups"),
+        ],
+        # Primary Engine Controls (High Impact)
+        [
+            InlineKeyboardButton(text="🚀 START ADS", callback_data="start_ads"),
+            InlineKeyboardButton(text="🛑 STOP ADS", callback_data="stop_ads"),
+        ],
+        # System & Analytics
+        [
+            InlineKeyboardButton(text="📊 Analytics", callback_data="analytics"),
+            InlineKeyboardButton(text=f"⏰ Schedule: {sched_icon}", callback_data="schedule_ads"),
+        ],
+        # Manager & Account Management
+        [
+            InlineKeyboardButton(text=f"👔 Manager: {mgr_icon}", callback_data="toggle_manager_account"),
             InlineKeyboardButton(text="🗑️ Delete Accounts", callback_data="delete_accounts"),
         ],
+        # VIP & Referral (concise, will not get truncated on mobile)
         [
-            InlineKeyboardButton(text=sched_text, callback_data="schedule_ads"),
-            InlineKeyboardButton(text=mgr_text, callback_data="toggle_manager_account"),
+            InlineKeyboardButton(text="💎 Premium (₹100)", callback_data="premium"),
+            InlineKeyboardButton(text="🎁 Refer & Earn", callback_data="refer_earn"),
         ],
+        # AI Deal Closer Assistant (Full Width Featured Banner)
         [
-            InlineKeyboardButton(text="🤖 AI ASSISTANT ATO REPLY", callback_data="ai_assistant_autoreply"),
+            InlineKeyboardButton(text="🤖 AI ASSISTANT ATO REPLY ⚡", callback_data="ai_assistant_autoreply"),
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

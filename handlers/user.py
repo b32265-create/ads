@@ -85,7 +85,7 @@ def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict,
     user_info = user_info or {}
     is_premium = user_info.get("is_premium", 0)
     first_name = html.escape(str(user_info.get("first_name") or "User"))
-    tier_badge = f"{EMOJI_DIAMOND} <b>VIP PRO</b>" if is_premium else f"{EMOJI_FLASH} <b>Standard Free</b>"
+    tier_badge = "👑 <b>VIP PRO</b>" if is_premium else "⚡ <b>FREE TIER</b>"
     limit_note = "<i>(Unlimited ∞)</i>" if is_premium else "<i>(Max 5)</i>"
 
     ad_msg = settings.get("ad_message")
@@ -93,62 +93,58 @@ def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict,
     media_type = settings.get("ad_media_type")
     if ad_msg or ad_media:
         type_str = f" [{media_type.upper()}]" if media_type else ""
-        ad_status = f"{EMOJI_VERIFIED} Set{type_str}"
+        ad_status = f"✅ <b>Configured{type_str}</b>"
     else:
-        ad_status = f"{EMOJI_WARNING} Not Set"
+        ad_status = "⚠️ <b>Not Set</b>"
 
     interval = settings.get("cycle_interval", 0)
     interval_display = format_interval(interval)
     if interval_display == "Not Set":
-        interval_display = f"{EMOJI_WARNING} Not Set"
+        interval_display = "⚠️ Not Set"
 
     delay = settings.get("message_delay", 5)
     target = settings.get("target_type", "Groups")
 
     max_c = settings.get("max_cycles", 0)
-    max_c_str = "∞" if max_c == 0 else str(max_c)
+    max_c_str = "Unlimited (∞)" if max_c == 0 else str(max_c)
     cycles_done = settings.get("completed_cycles", 0)
 
     status = settings.get("status", "Paused")
     if status.lower() == "running":
-        status_display = f"{EMOJI_RUNNING} <b>ACTIVE & BROADCASTING</b>"
+        engine_status = "🟢 <b>ACTIVE & BROADCASTING</b>"
     else:
-        status_display = f"{EMOJI_PAUSED} <b>IDLE / PAUSED</b>"
+        engine_status = "🔴 <b>IDLE / PAUSED</b>"
 
     sched_enabled = settings.get("schedule_enabled", 0)
     sched_start = settings.get("schedule_start") or "--:--"
     sched_end = settings.get("schedule_end") or "--:--"
     if sched_enabled:
-        sched_status = f"{EMOJI_RUNNING} {sched_start} ➔ {sched_end}"
+        sched_status = f"🟢 {sched_start} ➔ {sched_end}"
     else:
-        sched_status = f"{EMOJI_PAUSED} OFF"
+        sched_status = "🔴 Inactive"
 
     mgr_enabled = settings.get("manager_enabled", 1)
-    mgr_status = f"{EMOJI_VERIFIED} ON" if mgr_enabled else f"{EMOJI_PAUSED} OFF"
-
-    autodm_enabled = settings.get("autodm_enabled", 0)
-    autodm_rate = settings.get("autodm_rate_per_round") or 1
-    autodm_interval = settings.get("autodm_interval_minutes", 5)
-    autodm_status = f"{EMOJI_RUNNING} ON ({autodm_rate}/{autodm_interval}m)" if autodm_enabled else f"{EMOJI_PAUSED} OFF"
+    mgr_status = "🟢 Active" if mgr_enabled else "🔴 Inactive"
 
     return (
-        f"╔══════════════════════════╗\n"
-        f"  {EMOJI_FIRE} <b>ATOMIC ADS AUTOMATION</b> 🐲\n"
-        f"╚══════════════════════════╝\n"
-        f"👤 <b>User:</b> {first_name} | {tier_badge}\n"
-        f"🤖 <b>Bot:</b> @{bot_username}\n"
+        f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+        f"│   ⚡ <b>𝗔𝗧𝗢𝗠𝗜𝗖 𝗔𝗗𝗦 𝗡𝗘𝗧𝗪𝗢𝗥𝗞</b> ⚡   │\n"
+        f"│     <i>Autonomous Multi-Client Core</i>     │\n"
+        f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
+        f"👤 <b>Operator:</b> {first_name}  •  {tier_badge}\n"
+        f"🤖 <b>Bot Engine:</b> @{bot_username}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 <b>CAMPAIGN OVERVIEW & CONFIG</b>\n"
-        f"┌ {EMOJI_PLANE} <b>Hosted Accounts:</b> <code>{accounts_count}</code> {limit_note}\n"
-        f"├ {EMOJI_MSG} <b>Ad Content:</b> <b>{ad_status}</b>\n"
-        f"├ {EMOJI_TARGET} <b>Target Chats:</b> <code>{target}</code>\n"
-        f"├ {EMOJI_INTERVAL} <b>Cycle Interval:</b> <code>{interval_display}</code>\n"
-        f"├ {EMOJI_DELAY} <b>Message Delay:</b> <code>{delay}s</code>\n"
-        f"├ {EMOJI_MOON} <b>Progress Cycles:</b> <code>{cycles_done} / {max_c_str}</code>\n"
-        f"├ {EMOJI_CLOCK} <b>Schedule Window:</b> <code>{sched_status}</code>\n"
-        f"├ {EMOJI_USER} <b>Manager Account:</b> <code>{mgr_status}</code>\n"
-        f"├ 🤖 <b>AI Auto-Reply & Deal:</b> <code>⚡ Smart Assistant Ready</code>\n"
-        f"└ {status_display}\n"
+        f"📊 <b>CAMPAIGN STATUS & MATRIX</b>\n"
+        f"⚡ <b>Engine Status:</b> {engine_status}\n\n"
+        f"┌ 📱 <b>Hosted Accounts:</b> <code>{accounts_count}</code> {limit_note}\n"
+        f"├ 📝 <b>Ad Creative:</b> {ad_status}\n"
+        f"├ 🎯 <b>Target Audience:</b> <code>{target}</code>\n"
+        f"├ ⏱️ <b>Cycle Interval:</b> <code>{interval_display}</code>\n"
+        f"├ ⚡ <b>Message Delay:</b> <code>{delay}s</code>\n"
+        f"├ 🔄 <b>Cycle Progress:</b> <code>{cycles_done} / {max_c_str}</code>\n"
+        f"├ ⏰ <b>Schedule Window:</b> <code>{sched_status}</code>\n"
+        f"├ 👔 <b>Manager Relay:</b> <code>{mgr_status}</code>\n"
+        f"└ 🤖 <b>AI Auto-Reply & Deal:</b> <code>⚡ Smart Ready</code>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"💡 <i>Niche diye gaye control panel se action select karein:</i>"
     )
@@ -553,9 +549,9 @@ async def process_ad_message(message: Message, bot: Bot, state: FSMContext):
 async def btn_set_interval(call: CallbackQuery):
     await call.answer()
     text = (
-        f"╔══════════════════════════╗\n"
-        f"  {EMOJI_INTERVAL} <b>CYCLE INTERVAL CONFIG</b>\n"
-        f"╚══════════════════════════╝\n"
+        f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+        f"│  ⏱️ <b>CYCLE INTERVAL CONFIG</b> ⚡ │\n"
+        f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
         f"Ek campaign cycle complete hone ke baad agli cycle shuru hone ka pause time select karein.\n\n"
         f"• 👑 <b>1 Min / 5 Mins:</b> VIP Turbo Speed\n"
         f"• ⏱️ <b>10 Mins / 30 Mins:</b> Standard Free Intervals\n"
@@ -635,9 +631,9 @@ async def process_custom_interval(message: Message, bot: Bot, state: FSMContext)
 async def btn_set_delay(call: CallbackQuery):
     await call.answer()
     text = (
-        f"╔══════════════════════════╗\n"
-        f"  {EMOJI_DELAY} <b>MESSAGE DISPATCH DELAY</b>\n"
-        f"╚══════════════════════════╝\n"
+        f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+        f"│  ⚡ <b>MESSAGE DISPATCH DELAY</b> ⚡ │\n"
+        f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
         f"Har chat me ad post karne ke beech kitna delay rakhna hai:\n\n"
         f"• 👑 <b>1s:</b> Turbo VIP Speed\n"
         f"• 👑 <b>5s:</b> VIP Speed\n"
@@ -730,9 +726,9 @@ async def btn_toggle_target(call: CallbackQuery, bot: Bot):
 async def btn_set_cycles(call: CallbackQuery):
     await call.answer()
     text = (
-        f"╔══════════════════════════╗\n"
-        f"  {EMOJI_MOON} <b>AD CAMPAIGN CYCLES</b>\n"
-        f"╚══════════════════════════╝\n"
+        f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+        f"│   🔄 <b>AD CAMPAIGN CYCLES</b> ⚡   │\n"
+        f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
         f"Puri group list me ads kitni bar broadcast karni hai select karein:\n\n"
         f"• <b>5, 10, 15, 20:</b> Fixed cycle options\n"
         f"• 👑 <b>Unlimited (∞):</b> 24/7 continuous advertising (VIP only)\n"
@@ -776,9 +772,9 @@ async def process_custom_cycles(message: Message, bot: Bot, state: FSMContext):
 async def btn_ai_assistant_autoreply(call: CallbackQuery):
     await call.answer()
     text = (
-        f"╔══════════════════════════╗\n"
-        f"  🤖 <b>AI ATO REPLY & DEAL</b> ⚡\n"
-        f"╚══════════════════════════╝\n"
+        f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+        f"│  🤖 <b>AI ATO REPLY & DEAL</b> ⚡  │\n"
+        f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
         f"Koi bhi user ads wali I'd me msg karega usko atomic reply dega User ke set ada wala msg ke hisab se.\n\n"
         f"👑 <b>User ko ai assistant deal karega!</b>\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
@@ -889,30 +885,30 @@ async def btn_analytics(call: CallbackQuery):
         success_rate = f"{(total_sent / (total_sent + total_failed) * 100):.1f}"
 
     text = (
-        f"╔══════════════════════════╗\n"
-        f"  {EMOJI_STATS} <b>CAMPAIGN ANALYTICS</b> {EMOJI_FIRE}\n"
-        f"╚══════════════════════════╝\n"
-        f"📈 <b>Lifetime Ads Dispatched:</b> <code>{total_sent:,}</code>\n"
-        f"⚠️ <b>Failed / Skipped:</b> <code>{total_failed:,}</code>\n"
-        f"🎯 <b>Delivery Success Rate:</b> <code>{success_rate}%</code>\n"
-        f"🕒 <b>Last Active:</b> <code>{data.get('last_sent_at', 'Never')}</code>\n"
+        f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+        f"│   📊 <b>CAMPAIGN ANALYTICS</b> 🔥   │\n"
+        f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
+        f"┌ 🚀 <b>Total Ads Dispatched:</b> <code>{total_sent:,}</code>\n"
+        f"├ 🎯 <b>Delivery Success Rate:</b> <code>{success_rate}%</code>\n"
+        f"├ ⚠️ <b>Failed / Skipped:</b> <code>{total_failed:,}</code>\n"
+        f"└ 🕒 <b>Last Active:</b> <code>{data.get('last_sent_at', 'Never')}</code>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{EMOJI_PHONE} <b>HOSTED ACCOUNTS BREAKDOWN ({len(accounts)})</b>\n"
+        f"📱 <b>HOSTED ACCOUNTS METRICS ({len(accounts)})</b>\n\n"
     )
 
     if accounts:
         for idx, acc in enumerate(accounts, 1):
-            ban_tag = f" [{EMOJI_CROSS} BANNED]" if acc.get("is_banned") else f" [{EMOJI_VERIFIED} ACTIVE]"
+            ban_tag = "🔴 [BANNED]" if acc.get("is_banned") else "🟢 [ACTIVE]"
             text += (
-                f"{idx}. <b>{acc.get('account_name', 'Telegram')}</b> {ban_tag}\n"
-                f"   └ 🚀 Sent: <code>{acc.get('total_sent', 0)}</code> | ⚠️ Failed: <code>{acc.get('total_failed', 0)}</code>\n"
+                f"<b>{idx}. {acc.get('account_name', 'Telegram')}</b> {ban_tag}\n"
+                f"   └ 🚀 Sent: <code>{acc.get('total_sent', 0):,}</code> | ⚠️ Failed: <code>{acc.get('total_failed', 0):,}</code>\n\n"
             )
     else:
-        text += f"<i>Koi account connected nahi hai.</i>\n"
+        text += f"<i>Koi account connected nahi hai.</i>\n\n"
 
     text += (
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{EMOJI_SPARKLE} <i>All metrics updated in real-time via Supabase PostgreSQL.</i>"
+        f"⚡ <i>All metrics updated in real-time via Supabase PostgreSQL.</i>"
     )
     await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
 
@@ -1101,9 +1097,9 @@ async def btn_refer_earn(call: CallbackQuery, bot: Bot):
     status_line = f"🎉 <b>VIP Status:</b> <code>🟢 ACTIVE</code>" if is_premium else f"⚪ <b>VIP Status:</b> <code>Standard Free</code>"
 
     text = (
-        f"╔══════════════════════════╗\n"
-        f"  🎁 <b>REFER & EARN FREE VIP</b> {EMOJI_ROCKET}\n"
-        f"╚══════════════════════════╝\n"
+        f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+        f"│  🎁 <b>REFER & EARN FREE VIP</b> 🚀 │\n"
+        f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
         f"Apne dosto ko bot refer karein aur <b>1 Referral = 2 Days VIP Access bilkul FREE</b> payein!\n\n"
         f"┌ 👥 <b>Your Successful Referrals:</b> <code>{ref_count}</code>\n"
         f"├ 🎁 <b>VIP Days Earned:</b> <code>+{vip_days_earned} Days</code>\n"

@@ -395,11 +395,11 @@ async def btn_my_accounts(call: CallbackQuery):
     
     if not accounts:
         text = (
-            f"╔══════════════════════════╗\n"
-            f"  {EMOJI_USER} <b>HOSTED ACCOUNTS (0)</b>\n"
-            f"╚══════════════════════════╝\n"
-            f"{EMOJI_CROSS} <i>Aapne abhi tak koi Telegram account add nahi kiya hai.</i>\n\n"
-            f"Niche <b>Add Account</b> par click karke apna pehla account connect karein."
+            f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+            f"│  📱 <b>HOSTED ACCOUNTS (0)</b> ⚡  │\n"
+            f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
+            f"❌ <i>Aapne abhi tak koi Telegram account add nahi kiya hai.</i>\n\n"
+            f"Niche <b>➕ Add Account</b> par click karke apna pehla account connect karein."
         )
         markup = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="➕ Add Account", callback_data="add_account")],
@@ -409,23 +409,24 @@ async def btn_my_accounts(call: CallbackQuery):
         return
         
     text = (
-        f"╔══════════════════════════╗\n"
-        f"  {EMOJI_USER} <b>HOSTED ACCOUNTS ({len(accounts)})</b>\n"
-        f"╚══════════════════════════╝\n"
+        f"╭━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n"
+        f"│  📱 <b>HOSTED ACCOUNTS ({len(accounts)})</b> ⚡ │\n"
+        f"╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n"
+        f"Aapke connected Telegram accounts ki live status list:\n\n"
     )
     keyboard = []
     for idx, acc in enumerate(accounts, 1):
-        status_tag = f"[{EMOJI_CROSS} Banned]" if acc.get("is_banned") else f"[{EMOJI_VERIFIED} Active]"
+        status_tag = "🔴 [Banned]" if acc.get("is_banned") else "🟢 [Active]"
         text += (
             f"<b>{idx}. {acc.get('account_name', 'Telegram')}</b> {status_tag}\n"
-            f"   ├ 📱 <code>{acc.get('phone_number')}</code>\n"
-            f"   └ 🚀 Dispatched: <code>{acc.get('total_sent', 0)}</code> ads\n\n"
+            f"   ├ 📱 Phone: <code>{acc.get('phone_number')}</code>\n"
+            f"   └ 🚀 Dispatched: <code>{acc.get('total_sent', 0):,}</code> ads\n\n"
         )
         keyboard.append([
             InlineKeyboardButton(text=f"🗑️ Remove {acc.get('phone_number')}", callback_data=f"del_acc_{acc['id']}")
         ])
         
-    text += f"━━━━━━━━━━━━━━━━━━━━━\n💡 <i>Kisi account ko unlink karne ke liye niche buttons use karein:</i>"
+    text += f"━━━━━━━━━━━━━━━━━━━━━\n💡 <i>Kisi account ko unlink karne ke liye remove button dabayein:</i>"
     keyboard.append([InlineKeyboardButton(text="➕ Add Another Account", callback_data="add_account")])
     keyboard.append([InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")])
     
