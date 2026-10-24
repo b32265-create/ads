@@ -640,8 +640,8 @@ async def btn_set_delay(call: CallbackQuery):
         f"╚══════════════════════════╝\n"
         f"Har chat me ad post karne ke beech kitna delay rakhna hai:\n\n"
         f"• 👑 <b>1s:</b> Turbo VIP Speed\n"
-        f"• ⏳ <b>5s:</b> Standard Speed\n"
-        f"• ⏱️ <b>10s:</b> Safe Speed\n"
+        f"• 👑 <b>5s:</b> VIP Speed\n"
+        f"• ⏱️ <b>10s:</b> Safe Speed (Free)\n"
         f"• 🛡️ <b>30s:</b> Extra Safe (New Accounts)\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"👉 Niche delay select karein:"
@@ -672,8 +672,8 @@ async def process_delay_choice(call: CallbackQuery, bot: Bot, state: FSMContext)
         return
         
     seconds = int(val)
-    if not is_vip and seconds == 1:
-        await call.answer("👑 1s Turbo Delay sirf VIP members ke liye hai!", show_alert=True)
+    if not is_vip and seconds <= 5:
+        await call.answer(f"👑 {seconds}s Delay sirf VIP members ke liye hai!", show_alert=True)
         await btn_premium(call)
         return
 

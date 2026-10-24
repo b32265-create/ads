@@ -104,7 +104,7 @@ def get_delay_keyboard() -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton(text="👑 1s (Turbo VIP)", callback_data="delay_1"),
-            InlineKeyboardButton(text="⏳ 5s", callback_data="delay_5"),
+            InlineKeyboardButton(text="👑 5s (VIP)", callback_data="delay_5"),
         ],
         [
             InlineKeyboardButton(text="⏱️ 10s", callback_data="delay_10"),
