@@ -147,7 +147,7 @@ def build_dashboard_text(bot_username: str, accounts_count: int, settings: dict,
         f"├ {EMOJI_MOON} <b>Progress Cycles:</b> <code>{cycles_done} / {max_c_str}</code>\n"
         f"├ {EMOJI_CLOCK} <b>Schedule Window:</b> <code>{sched_status}</code>\n"
         f"├ {EMOJI_USER} <b>Manager Account:</b> <code>{mgr_status}</code>\n"
-        f"├ {EMOJI_FLASH} <b>Auto DM (5m Scan):</b> <code>{autodm_status}</code>\n"
+        f"├ 🤖 <b>AI Auto-Reply & Deal:</b> <code>⚡ Smart Assistant Ready</code>\n"
         f"└ {status_display}\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"💡 <i>Niche diye gaye control panel se action select karein:</i>"
@@ -557,7 +557,8 @@ async def btn_set_interval(call: CallbackQuery):
         f"  {EMOJI_INTERVAL} <b>CYCLE INTERVAL CONFIG</b>\n"
         f"╚══════════════════════════╝\n"
         f"Ek campaign cycle complete hone ke baad agli cycle shuru hone ka pause time select karein.\n\n"
-        f"💡 <i>Recommended: 5 ya 10 Minutes (FloodWait se bachne ke liye).</i>\n"
+        f"• 👑 <b>1 Min / 5 Mins:</b> VIP Turbo Speed\n"
+        f"• ⏱️ <b>10 Mins / 30 Mins:</b> Standard Free Intervals\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"👉 Niche pre-set ya custom intervals chunein:"
     )
@@ -567,6 +568,8 @@ async def btn_set_interval(call: CallbackQuery):
 async def process_interval_choice(call: CallbackQuery, bot: Bot, state: FSMContext):
     val = call.data.replace("interval_", "")
     user_id = call.from_user.id
+    user_info = await db.get_user_info(user_id)
+    is_vip = bool(user_info and user_info.get("is_premium", 0)) or (user_id in ADMIN_IDS)
     
     if val == "custom":
         await call.answer()
@@ -576,16 +579,22 @@ async def process_interval_choice(call: CallbackQuery, bot: Bot, state: FSMConte
             f"  {EMOJI_SPARKLE} <b>CUSTOM INTERVAL</b>\n"
             f"╚══════════════════════════╝\n"
             f"Seconds me custom time enter karein:\n\n"
-            f"• <code>300</code> = 5 Minutes\n"
+            f"• <code>600</code> = 10 Minutes\n"
             f"• <code>900</code> = 15 Minutes\n"
             f"• <code>1800</code> = 30 Minutes\n\n"
-            f"👉 <i>Number send karein (Minimum 30s):</i>",
+            f"👑 <i>Note: 1m aur 5m intervals sirf VIP members ke liye hain.</i>\n\n"
+            f"👉 <i>Number send karein (Free: Minimum 600s / 10m):</i>",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
         return
         
     seconds = int(val)
+    if not is_vip and seconds <= 300:
+        await call.answer("👑 1 Min aur 5 Mins intervals sirf VIP members ke liye hain!", show_alert=True)
+        await btn_premium(call)
+        return
+
     await db.update_user_setting(user_id, "cycle_interval", seconds)
     await call.answer(f"Interval set to {format_interval(seconds)}!")
     await show_dashboard(bot, call.message.chat.id, user_id, message_to_edit=call.message)
@@ -593,10 +602,26 @@ async def process_interval_choice(call: CallbackQuery, bot: Bot, state: FSMConte
 @router.message(UserStates.waiting_custom_interval)
 async def process_custom_interval(message: Message, bot: Bot, state: FSMContext):
     user_id = message.from_user.id
+    user_info = await db.get_user_info(user_id)
+    is_vip = bool(user_info and user_info.get("is_premium", 0)) or (user_id in ADMIN_IDS)
     try:
         seconds = int(message.text.strip())
         if seconds < 30:
             await message.answer(f"{EMOJI_WARNING} Minimum interval 30 seconds hona chahiye.", reply_markup=kb.get_back_keyboard())
+            return
+        if not is_vip and seconds <= 300:
+            prem_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💎 Upgrade to VIP (₹100)", callback_data="premium")],
+                [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
+            ])
+            await message.answer(
+                f"⚠️ <b>VIP Access Required</b>\n\n"
+                f"1m se 5m turbo intervals sirf <b>VIP Members</b> ke liye available hain.\n"
+                f"Free members ke liye minimum interval 10 minutes (600s) hai.\n\n"
+                f"👉 VIP upgrade karein ya 10m+ set karein:",
+                parse_mode="HTML",
+                reply_markup=prem_kb
+            )
             return
         await db.update_user_setting(user_id, "cycle_interval", seconds)
         await state.clear()
@@ -614,9 +639,10 @@ async def btn_set_delay(call: CallbackQuery):
         f"  {EMOJI_DELAY} <b>MESSAGE DISPATCH DELAY</b>\n"
         f"╚══════════════════════════╝\n"
         f"Har chat me ad post karne ke beech kitna delay rakhna hai:\n\n"
-        f"• <b>2s:</b> ⚡ Fast (Established Accounts)\n"
-        f"• <b>5s:</b> 🥂 Optimal (Recommended standard)\n"
-        f"• <b>15s:</b> 🛡️ Extra Safe (Fresh/New accounts)\n"
+        f"• 👑 <b>1s:</b> Turbo VIP Speed\n"
+        f"• ⏳ <b>5s:</b> Standard Speed\n"
+        f"• ⏱️ <b>10s:</b> Safe Speed\n"
+        f"• 🛡️ <b>30s:</b> Extra Safe (New Accounts)\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"👉 Niche delay select karein:"
     )
@@ -626,6 +652,8 @@ async def btn_set_delay(call: CallbackQuery):
 async def process_delay_choice(call: CallbackQuery, bot: Bot, state: FSMContext):
     val = call.data.replace("delay_", "")
     user_id = call.from_user.id
+    user_info = await db.get_user_info(user_id)
+    is_vip = bool(user_info and user_info.get("is_premium", 0)) or (user_id in ADMIN_IDS)
     
     if val == "custom":
         await call.answer()
@@ -635,13 +663,20 @@ async def process_delay_choice(call: CallbackQuery, bot: Bot, state: FSMContext)
             f"  {EMOJI_SPARKLE} <b>CUSTOM DELAY</b>\n"
             f"╚══════════════════════════╝\n"
             f"Messages ke beech seconds me gap enter karein:\n"
-            f"<i>(Example: <code>7</code> ya <code>12</code>)</i>",
+            f"<i>(Example: <code>10</code> ya <code>15</code>)</i>\n\n"
+            f"👑 <i>Note: 1s se 5s turbo delay sirf VIP members ke liye hai.</i>\n\n"
+            f"👉 <i>Number send karein:</i>",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
         return
         
     seconds = int(val)
+    if not is_vip and seconds == 1:
+        await call.answer("👑 1s Turbo Delay sirf VIP members ke liye hai!", show_alert=True)
+        await btn_premium(call)
+        return
+
     await db.update_user_setting(user_id, "message_delay", seconds)
     await call.answer(f"Delay set to {seconds}s!")
     await show_dashboard(bot, call.message.chat.id, user_id, message_to_edit=call.message)
@@ -649,10 +684,26 @@ async def process_delay_choice(call: CallbackQuery, bot: Bot, state: FSMContext)
 @router.message(UserStates.waiting_custom_delay)
 async def process_custom_delay(message: Message, bot: Bot, state: FSMContext):
     user_id = message.from_user.id
+    user_info = await db.get_user_info(user_id)
+    is_vip = bool(user_info and user_info.get("is_premium", 0)) or (user_id in ADMIN_IDS)
     try:
         seconds = int(message.text.strip())
         if seconds < 1:
             await message.answer(f"{EMOJI_WARNING} Minimum delay 1 second hona chahiye.", reply_markup=kb.get_back_keyboard())
+            return
+        if not is_vip and seconds <= 5:
+            prem_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💎 Upgrade to VIP (₹100)", callback_data="premium")],
+                [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
+            ])
+            await message.answer(
+                f"⚠️ <b>VIP Access Required</b>\n\n"
+                f"1s se 5s turbo delay sirf <b>VIP Members</b> ke liye available hai.\n"
+                f"Free members ke liye minimum delay 10s hai.\n\n"
+                f"👉 VIP upgrade karein:",
+                parse_mode="HTML",
+                reply_markup=prem_kb
+            )
             return
         await db.update_user_setting(user_id, "message_delay", seconds)
         await state.clear()
@@ -683,8 +734,8 @@ async def btn_set_cycles(call: CallbackQuery):
         f"  {EMOJI_MOON} <b>AD CAMPAIGN CYCLES</b>\n"
         f"╚══════════════════════════╝\n"
         f"Puri group list me ads kitni bar broadcast karni hai select karein:\n\n"
-        f"• <b>Unlimited (∞):</b> 24/7 continuous advertising\n"
-        f"• <b>Fixed Cycles:</b> Targeted amount complete hote hi auto-pause\n"
+        f"• <b>5, 10, 15, 20:</b> Fixed cycle options\n"
+        f"• 👑 <b>Unlimited (∞):</b> 24/7 continuous advertising (VIP only)\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"👉 Select cycle mode below:"
     )
@@ -694,6 +745,8 @@ async def btn_set_cycles(call: CallbackQuery):
 async def process_cycles_choice(call: CallbackQuery, bot: Bot, state: FSMContext):
     val = call.data.replace("cycles_", "")
     user_id = call.from_user.id
+    user_info = await db.get_user_info(user_id)
+    is_vip = bool(user_info and user_info.get("is_premium", 0)) or (user_id in ADMIN_IDS)
     
     if val == "custom":
         await call.answer()
@@ -703,13 +756,19 @@ async def process_cycles_choice(call: CallbackQuery, bot: Bot, state: FSMContext
             f"  {EMOJI_SPARKLE} <b>CUSTOM CYCLES</b>\n"
             f"╚══════════════════════════╝\n"
             f"Total cycles ka number enter karein:\n"
-            f"<i>(Example: <code>25</code> ya <code>0</code> for Unlimited)</i>",
+            f"<i>(Example: <code>15</code> ya <code>20</code>)</i>\n\n"
+            f"👑 <i>Note: Unlimited (∞) cycles sirf VIP members ke liye hai.</i>",
             parse_mode="HTML",
             reply_markup=kb.get_back_keyboard()
         )
         return
         
     num = int(val)
+    if not is_vip and num == 0:
+        await call.answer("👑 Unlimited (∞) Cycles sirf VIP members ke liye hai!", show_alert=True)
+        await btn_premium(call)
+        return
+
     await db.update_user_setting(user_id, "max_cycles", num)
     cycle_str = "Unlimited (∞)" if num == 0 else str(num)
     await call.answer(f"Cycles set to {cycle_str}!")
@@ -718,10 +777,25 @@ async def process_cycles_choice(call: CallbackQuery, bot: Bot, state: FSMContext
 @router.message(UserStates.waiting_custom_cycles)
 async def process_custom_cycles(message: Message, bot: Bot, state: FSMContext):
     user_id = message.from_user.id
+    user_info = await db.get_user_info(user_id)
+    is_vip = bool(user_info and user_info.get("is_premium", 0)) or (user_id in ADMIN_IDS)
     try:
         num = int(message.text.strip())
         if num < 0:
             raise ValueError
+        if not is_vip and num == 0:
+            prem_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💎 Upgrade to VIP (₹100)", callback_data="premium")],
+                [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
+            ])
+            await message.answer(
+                f"⚠️ <b>VIP Access Required</b>\n\n"
+                f"Unlimited (∞) cycles sirf <b>VIP Members</b> ke liye available hain.\n\n"
+                f"👉 VIP upgrade karein ya 1 se 20 cycles set karein:",
+                parse_mode="HTML",
+                reply_markup=prem_kb
+            )
+            return
         await db.update_user_setting(user_id, "max_cycles", num)
         cycle_str = "Unlimited (∞)" if num == 0 else str(num)
         await state.clear()
@@ -729,6 +803,25 @@ async def process_custom_cycles(message: Message, bot: Bot, state: FSMContext):
         await show_dashboard(bot, message.chat.id, user_id)
     except ValueError:
         await message.answer(f"{EMOJI_CROSS} Please enter a valid number (0 or positive integer).", reply_markup=kb.get_back_keyboard())
+
+# --- AI ASSISTANT ATO REPLY & DEAL ---
+@router.callback_query(F.data == "ai_assistant_autoreply")
+async def btn_ai_assistant_autoreply(call: CallbackQuery):
+    await call.answer()
+    text = (
+        f"╔══════════════════════════╗\n"
+        f"  🤖 <b>AI ATO REPLY & DEAL</b> ⚡\n"
+        f"╚══════════════════════════╝\n"
+        f"Koi bhi user ads wali I'd me msg karega usko atomic reply dega User ke set ada wala msg ke hisab se.\n\n"
+        f"👑 <b>User ko ai assistant deal karega!</b>\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💡 <i>AI Deal & Auto-Reply unlock karne ke liye Premium join karein:</i>"
+    )
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💎 Buy Premium (₹100)", callback_data="premium")],
+        [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
+    ])
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
 # --- EXCLUDE GROUPS ---
 @router.callback_query(F.data == "exclude_groups")

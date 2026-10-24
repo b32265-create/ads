@@ -12,7 +12,7 @@ from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError, P
 
 import database as db
 import keyboards as kb
-from config import API_ID, API_HASH
+from config import API_ID, API_HASH, ADMIN_IDS
 from join_helper import join_telegram_target
 from emojis import (
     ID_HEART_FIRE, ID_DIAMOND, ID_BACK, ID_USER, ID_STAR, ID_TRASH, ID_WARNING,
@@ -43,11 +43,12 @@ async def check_account_limit(user_id: int):
         db.get_bot_setting("max_accounts_per_user", "5")
     )
     is_premium = user_info.get("is_premium", 0) if user_info else 0
+    is_vip = bool(is_premium) or (user_id in ADMIN_IDS)
     try:
         limit = int(max_accs)
     except (ValueError, TypeError):
         limit = 5
-    if not is_premium and acc_count >= limit:
+    if not is_vip and acc_count >= limit:
         return False, acc_count, limit
     return True, acc_count, limit
 
@@ -57,22 +58,9 @@ async def btn_add_account(call: CallbackQuery):
     user_id = call.from_user.id
     can_add, current_count, limit = await check_account_limit(user_id)
     if not can_add:
-        await call.answer("Limit Reached!", show_alert=True)
-        limit_text = (
-            f"╔══════════════════════════╗\n"
-            f"  {EMOJI_WARNING} <b>ACCOUNT LIMIT REACHED</b>\n"
-            f"╚══════════════════════════╝\n"
-            f"Free tier me maximum <b>{limit}</b> accounts host kiye ja sakte hain.\n"
-            f"Aapke account me already <b>{current_count}</b> accounts active hain.\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🚀 <b>Upgrade to VIP Premium:</b>\n"
-            f"50+ accounts host karne ke liye, 1s delay, 1m interval aur clean bio ke liye VIP join karein!"
-        )
-        prem_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💎 Upgrade to Premium", callback_data="premium")],
-            [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
-        ])
-        await call.message.edit_text(limit_text, parse_mode="HTML", reply_markup=prem_kb)
+        await call.answer("👑 5+ Accounts host karne ke liye VIP Premium chahiye!", show_alert=True)
+        from handlers.user import btn_premium
+        await btn_premium(call)
         return
 
     await call.answer()
@@ -96,7 +84,9 @@ async def start_phone_login(call: CallbackQuery, state: FSMContext):
     user_id = call.from_user.id
     can_add, current_count, limit = await check_account_limit(user_id)
     if not can_add:
-        await call.answer(f"Limit reached! Free plan: max {limit} accounts.", show_alert=True)
+        await call.answer("👑 5+ Accounts host karne ke liye VIP Premium chahiye!", show_alert=True)
+        from handlers.user import btn_premium
+        await btn_premium(call)
         return
 
     await call.answer()
@@ -316,7 +306,9 @@ async def start_session_login(call: CallbackQuery, state: FSMContext):
     user_id = call.from_user.id
     can_add, current_count, limit = await check_account_limit(user_id)
     if not can_add:
-        await call.answer(f"Limit reached! Free plan: max {limit} accounts.", show_alert=True)
+        await call.answer("👑 5+ Accounts host karne ke liye VIP Premium chahiye!", show_alert=True)
+        from handlers.user import btn_premium
+        await btn_premium(call)
         return
 
     await call.answer()
@@ -487,24 +479,19 @@ async def delete_single_account(call: CallbackQuery):
 @router.callback_query(F.data == "auto_join_groups")
 async def btn_auto_join(call: CallbackQuery, state: FSMContext):
     await call.answer()
-    user_id = call.from_user.id
-    accounts = await db.get_user_accounts(user_id)
-    if not accounts:
-        await call.answer("Pehle Telegram account add karein!", show_alert=True)
-        return
-        
     text = (
         f"╔══════════════════════════╗\n"
-        f"  {EMOJI_TARGET} <b>AUTO JOIN GROUPS & CHANNELS</b>\n"
+        f"  💎 <b>𝗣𝗿𝗲𝗺𝗶𝘂𝗺 𝗺𝗲𝗺𝗯𝗲𝗿 (𝗩𝗜𝗣)</b> 🚀\n"
         f"╚══════════════════════════╝\n"
-        f"Apne sabhi <b>{len(accounts)}</b> accounts se naye Public ya Private groups join karne ke liye unke links enter karein:\n\n"
-        f"• <b>Public:</b> <code>@groupname</code> ya <code>https://t.me/groupname</code>\n"
-        f"• <b>Private Invite:</b> <code>https://t.me/+inviteHash</code> ya <code>https://t.me/joinchat/...</code>\n"
+        f"ap ka ato join group start hai jese hi ap group me join honge ham usme ads start kar denge\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<i>(Har link ko nayi line me paste karein)</i>:"
+        f"👑 <i>VIP Auto-Join Groups unlock karne ke liye Premium join karein:</i>"
     )
-    await state.set_state(AccountStates.waiting_autojoin_links)
-    await call.message.edit_text(text, parse_mode="HTML", reply_markup=kb.get_back_keyboard())
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💎 Buy Premium (₹100)", callback_data="premium")],
+        [InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")]
+    ])
+    await call.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
 @router.message(AccountStates.waiting_autojoin_links)
 async def process_autojoin_links(message: Message, bot: Bot, state: FSMContext):

@@ -51,8 +51,7 @@ def get_dashboard_keyboard(
             InlineKeyboardButton(text=mgr_text, callback_data="toggle_manager_account"),
         ],
         [
-            InlineKeyboardButton(text="📨 Forward Account", callback_data="set_forward_account"),
-            InlineKeyboardButton(text="💬 Auto DM (5m Scan)", callback_data="auto_dm_menu"),
+            InlineKeyboardButton(text="🤖 AI ASSISTANT ATO REPLY", callback_data="ai_assistant_autoreply"),
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -83,15 +82,14 @@ def get_interval_keyboard() -> InlineKeyboardMarkup:
     """Pre-set intervals for cycle delay with standard emojis."""
     keyboard = [
         [
-            InlineKeyboardButton(text="⚡ 1 Min", callback_data="interval_60"),
-            InlineKeyboardButton(text="⏱️ 5 Mins", callback_data="interval_300"),
+            InlineKeyboardButton(text="👑 1 Min (VIP)", callback_data="interval_60"),
+            InlineKeyboardButton(text="👑 5 Mins (VIP)", callback_data="interval_300"),
         ],
         [
             InlineKeyboardButton(text="⏱️ 10 Mins", callback_data="interval_600"),
             InlineKeyboardButton(text="⏱️ 30 Mins", callback_data="interval_1800"),
         ],
         [
-            InlineKeyboardButton(text="🕒 1 Hour", callback_data="interval_3600"),
             InlineKeyboardButton(text="⚙️ Custom Seconds", callback_data="interval_custom"),
         ],
         [
@@ -105,12 +103,12 @@ def get_delay_keyboard() -> InlineKeyboardMarkup:
     """Pre-set delays between individual messages to prevent flood limits."""
     keyboard = [
         [
-            InlineKeyboardButton(text="🚀 1s (Turbo VIP)", callback_data="delay_1"),
-            InlineKeyboardButton(text="⚡ 2s (Fast)", callback_data="delay_2"),
+            InlineKeyboardButton(text="👑 1s (Turbo VIP)", callback_data="delay_1"),
+            InlineKeyboardButton(text="⏳ 5s", callback_data="delay_5"),
         ],
         [
-            InlineKeyboardButton(text="⏳ 5s (Standard)", callback_data="delay_5"),
-            InlineKeyboardButton(text="🛡️ 15s (Safest)", callback_data="delay_15"),
+            InlineKeyboardButton(text="⏱️ 10s", callback_data="delay_10"),
+            InlineKeyboardButton(text="🛡️ 30s", callback_data="delay_30"),
         ],
         [
             InlineKeyboardButton(text="⚙️ Custom Seconds", callback_data="delay_custom"),
@@ -126,15 +124,18 @@ def get_cycles_keyboard() -> InlineKeyboardMarkup:
     """Pre-set cycles options."""
     keyboard = [
         [
-            InlineKeyboardButton(text="♾️ Unlimited (∞)", callback_data="cycles_0"),
             InlineKeyboardButton(text="🎯 5 Cycles", callback_data="cycles_5"),
+            InlineKeyboardButton(text="🎯 10 Cycles", callback_data="cycles_10"),
         ],
         [
-            InlineKeyboardButton(text="🎯 10 Cycles", callback_data="cycles_10"),
-            InlineKeyboardButton(text="🔥 50 Cycles", callback_data="cycles_50"),
+            InlineKeyboardButton(text="🎯 15 Cycles", callback_data="cycles_15"),
+            InlineKeyboardButton(text="🎯 20 Cycles", callback_data="cycles_20"),
         ],
         [
             InlineKeyboardButton(text="⚙️ Custom Number", callback_data="cycles_custom"),
+        ],
+        [
+            InlineKeyboardButton(text="👑 ♾️ Unlimited (∞) (VIP)", callback_data="cycles_0"),
         ],
         [
             InlineKeyboardButton(text="🔙 Back to Dashboard", callback_data="back_to_dashboard")
