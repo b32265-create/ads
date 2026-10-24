@@ -1,14 +1,13 @@
 services:
   - type: web
-    name: atomic-ads-bot
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    name: shadow-ads-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: free
     autoDeploy: true
+    healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.8
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_IDS
@@ -19,3 +18,4 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false
+

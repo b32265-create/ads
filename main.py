@@ -106,7 +106,10 @@ async def main():
         print("="*60 + "\n")
         return
 
-    # 1. Initialize SQLite DB with WAL mode
+    # 0. Start Cloud Health Server immediately for Render / Cloud health check
+    health_runner = await start_health_server()
+
+    # 1. Initialize DB backend
     logger.info("Initializing database...")
     await db.init_db()
 
@@ -143,9 +146,6 @@ async def main():
     bot_info = await bot.get_me()
     logger.info(f"Bot started successfully as @{bot_info.username} ({bot_info.first_name})")
     print(f"\n🚀 Bot @{bot_info.username} is running! Press Ctrl+C to stop.\n")
-
-    # 5. Start optional Cloud Health Server (for Render / Koyeb)
-    health_runner = await start_health_server()
 
     # 6. Initialize DM relay listeners for all hosted accounts in background
     try:
