@@ -16,7 +16,7 @@ from telethon.errors import (
 
 import database as db
 import keyboards as kb
-from config import API_ID, API_HASH
+from config import API_ID, API_HASH, ADMIN_IDS
 from handlers.user import show_dashboard
 from dm_relay import get_or_create_client
 from system_clients import get_system_client
@@ -155,7 +155,14 @@ async def run_single_account_ads(
         target_type = settings.get("target_type", "Groups").lower()
         excluded_raw = settings.get("exclude_groups", "") or ""
         excluded = [x.strip().lower() for x in excluded_raw.split(",") if x.strip()]
-        delay = max(settings.get("message_delay", 5), 1)
+
+        user_info = await db.get_user_info(user_id)
+        is_vip = bool(user_info and user_info.get("is_premium", 0)) or (user_id in ADMIN_IDS)
+        raw_delay = settings.get("message_delay", 10)
+        if not is_vip and raw_delay <= 5:
+            delay = 10
+        else:
+            delay = max(raw_delay, 1)
 
         # Iterate over dialogs (groups/supergroups/channels)
         async for dialog in client.iter_dialogs(limit=200):
@@ -428,6 +435,12 @@ async def btn_start_ads(call: CallbackQuery, bot: Bot):
         await db.update_user_setting(user_id, "cycle_interval", 300)
         settings["cycle_interval"] = 300
 
+    user_info = await db.get_user_info(user_id)
+    is_vip = bool(user_info and user_info.get("is_premium", 0)) or (user_id in ADMIN_IDS)
+    if not is_vip and settings.get("message_delay", 10) <= 5:
+        await db.update_user_setting(user_id, "message_delay", 10)
+        settings["message_delay"] = 10
+
     # Check if already running
     if settings.get("status") == "Running" and user_id in active_ad_tasks and not active_ad_tasks[user_id].done():
         await call.answer("🚀 Ads already running hain!", show_alert=True)
@@ -509,6 +522,12 @@ async def cmd_start_ads(message: Message, bot: Bot):
     if not settings.get("cycle_interval") or settings.get("cycle_interval") <= 0:
         await db.update_user_setting(user_id, "cycle_interval", 300)
         settings["cycle_interval"] = 300
+
+    user_info = await db.get_user_info(user_id)
+    is_vip = bool(user_info and user_info.get("is_premium", 0)) or (user_id in ADMIN_IDS)
+    if not is_vip and settings.get("message_delay", 10) <= 5:
+        await db.update_user_setting(user_id, "message_delay", 10)
+        settings["message_delay"] = 10
 
     if settings.get("status") == "Running" and user_id in active_ad_tasks and not active_ad_tasks[user_id].done():
         await message.answer("🚀 Ads already running hain!")

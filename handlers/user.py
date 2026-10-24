@@ -243,9 +243,14 @@ async def show_dashboard(bot: Bot, chat_id: int, user_id: int, message_to_edit: 
         db.get_user_info(user_id)
     )
 
+    is_vip = bool(user_info and user_info.get("is_premium", 0)) or (user_id in ADMIN_IDS)
+    if not is_vip and settings.get("message_delay", 10) <= 5:
+        await db.update_user_setting(user_id, "message_delay", 10)
+        settings["message_delay"] = 10
+
     text = build_dashboard_text(bot_username, accounts_count, settings, user_info)
     markup = kb.get_dashboard_keyboard(
-        msg_delay=settings.get("message_delay", 5),
+        msg_delay=settings.get("message_delay", 10),
         target=settings.get("target_type", "Groups"),
         schedule_enabled=settings.get("schedule_enabled", 0),
         manager_enabled=settings.get("manager_enabled", 1)

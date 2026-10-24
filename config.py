@@ -20,5 +20,5 @@ DB_PATH = os.getenv("DB_PATH", "shadow_ads.db")
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 # Default Ad posting settings
-DEFAULT_MSG_DELAY = int(os.getenv("DEFAULT_MSG_DELAY", "5"))       # seconds
+DEFAULT_MSG_DELAY = int(os.getenv("DEFAULT_MSG_DELAY", "10"))       # seconds (10s for free users)
 DEFAULT_CYCLE_INTERVAL = int(os.getenv("DEFAULT_CYCLE_INTERVAL", "600")) # 10 mins in seconds

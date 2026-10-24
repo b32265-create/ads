@@ -96,7 +96,7 @@ async def init_db():
             ad_media_id      TEXT DEFAULT NULL,
             ad_media_type    TEXT DEFAULT NULL,
             cycle_interval   INTEGER DEFAULT 0,
-            message_delay    INTEGER DEFAULT 5,
+            message_delay    INTEGER DEFAULT 10,
             target_type      TEXT DEFAULT 'Groups',
             max_cycles       INTEGER DEFAULT 0,
             completed_cycles INTEGER DEFAULT 0,
